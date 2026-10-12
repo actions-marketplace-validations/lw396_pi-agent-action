@@ -1,6 +1,6 @@
 self-hosted-runner:
   labels:
-    # GitHub's egress-firewall runner (technical preview), which CLAUDE.md,
+    # GitHub's egress-firewall runner (technical preview), which AGENTS.md,
     # "Security hardening for GitHub Actions", requires for jobs that run the
     # agent. actionlint does not know the label yet.
     - ubuntu-24.04-firewall

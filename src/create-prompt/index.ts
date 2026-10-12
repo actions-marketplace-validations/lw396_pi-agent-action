@@ -533,7 +533,7 @@ Use THREE dots (...) between branches. URL-encode all parameters.`
 
 Always include at the bottom:
 - Job link: [View job run](${jobUrl})
-- Follow the repo's CLAUDE.md file for project-specific guidelines`;
+- Follow the repo's AGENTS.md (or compatible CLAUDE.md) for project-specific guidelines`;
 
   return promptContent;
 }

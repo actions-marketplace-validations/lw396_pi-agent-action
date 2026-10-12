@@ -35,7 +35,7 @@ bun run install-hooks   # optional: format, typecheck and test before each commi
 | `examples/`                | Workflows users copy                                                                        |
 | `docs/`                    | User documentation; `docs/development/` holds design notes and ADRs                         |
 
-`CLAUDE.md` describes the architecture and the things that tend to bite; read it before a structural change.
+`AGENTS.md` describes the architecture and the things that tend to bite; read it before a structural change.
 
 ## Relationship to claude-code-action
 
@@ -49,7 +49,7 @@ This project is ported from [anthropics/claude-code-action](https://github.com/a
 4. Use [Conventional Commits](https://www.conventionalcommits.org/) for commit messages (`feat:`, `fix:`, `docs:`, ...).
 5. Update the docs in the same pull request when inputs, outputs or behaviour change.
 
-Changes to `.github/workflows/` must keep the hardening that [`workflow-hardening.yml`](./workflows/workflow-hardening.yml) checks: jobs that run the agent use the egress-firewall runner, the network allow list and a narrow `allowed_tools`. `CLAUDE.md` explains each.
+Changes to `.github/workflows/` must keep the hardening that [`workflow-hardening.yml`](./workflows/workflow-hardening.yml) checks: jobs that run the agent use the egress-firewall runner, the network allow list and a narrow `allowed_tools`. `AGENTS.md` explains each.
 
 ## Trying a change end to end
 

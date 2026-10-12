@@ -23,8 +23,8 @@ export async function checkAndCommitOrDeleteBranch(
   //
   // The exclusion is driven by what was actually restored rather than applied
   // unconditionally: this path also runs for issues, where no restore happens
-  // and Claude may legitimately have been asked to edit CLAUDE.md or
-  // .claude/settings.json. Excluding those there would silently drop the work.
+  // and the agent may legitimately have been asked to edit AGENTS.md,
+  // CLAUDE.md or .claude/settings.json. Excluding those there would silently drop the work.
   const pathspecArgs =
     restoredConfigPaths.length > 0
       ? ["--", ".", ...restoredConfigPaths.map((p) => `:(exclude)${p}`)]

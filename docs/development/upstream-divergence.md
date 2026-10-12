@@ -75,7 +75,7 @@
 
 - 默认 tag mode 提示词：上游的固定五步流程和 `<analysis>` 输出要求 → 以请求来源、运行环境、发布方式和完成条件为核心的简洁指令；不指定模型或推理格式，遵循 `AGENTS.md` 及兼容的 `CLAUDE.md`，进度按里程碑更新（`multi-provider`，用户可见；`src/create-prompt/index.ts`）。请求来源按事件选择，assigned/labeled 事件读取整个 issue body，无需 trigger phrase；仓库规范不授权额外任务，也不能覆盖工具和安全约束。
 - 实现任务完成条件：复杂任务可解释后标记完成 → 默认 tag mode 要求完整实现并验证验收条件，不自行缩减或扩大范围；阻塞时先完成其余独立工作，未完成或未验证项保持未勾选，并报告具体阻塞（`pi-capability`，用户可见）。验证与改动相称，不无故重复或扩大检查。
-- 以上是提示词约束，不是 Runner 的完成度检查；`USE_SIMPLE_PROMPT` 简化版和 agent mode 的自定义 `prompt` 保持不变。tag mode 的 `<custom_instructions>` 仍追加在默认提示词之后。分支由 action 准备，提示词不再要求模型新建分支；可用工具和 GitHub 权限由运行配置决定，不能靠提示词扩大。
+- 以上是提示词约束，不是 Runner 的完成度检查；简化版仅把仓库规范一行改为 `AGENTS.md`（兼容 `CLAUDE.md`），其余不变；agent mode 的自定义 `prompt` 不受影响。tag mode 的 `<custom_instructions>` 仍追加在默认提示词之后。分支由 action 准备，提示词不再要求模型新建分支；可用工具和 GitHub 权限由运行配置决定，不能靠提示词扩大。
 - 不读仓库的 `.pi/mcp.json`：pi 中配置文件里的同名 server 优先于 SDK 注册的 server，被检出的代码可以借此换掉本项目的 server，拿到 GitHub token。server 的 `env` 值一律转义，因为 pi 会展开 `$NAME`、执行以 `!` 开头的值，而分支名等值来自仓库。
 - 用 `direct` 模式：pi 默认的 `codemode` 不直接向模型声明工具，和提示词中"调用某工具"的指令对不上。pi 没有 ToolSearch，工具直接声明，所以提示词不提它。
 - 斜杠命令由 Runner 展开：pi 只展开以 `/` 开头的消息，而 tag mode 的提示词以 GitHub 上下文开头。展开格式与 pi 自己的一致，`test/pi-sdk/slash-command.test.ts` 用真实的 pi 会话核对；上游的 `.claude/commands/` 要搬到 `.pi/prompts/`。

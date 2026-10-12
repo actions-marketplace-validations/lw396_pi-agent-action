@@ -1202,6 +1202,11 @@ describe("generatePrompt", () => {
         expect(prompt).toContain(
           "https://github.com/lw396/pi-agent-action/blob/main/docs/faq.md",
         );
+
+        // 5. Repository guidance names AGENTS.md (with CLAUDE.md compatibility)
+        expect(prompt).toContain(
+          "Follow the repo's AGENTS.md (or compatible CLAUDE.md)",
+        );
       });
     });
 
