@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guidance for coding agents (and humans) working on this repository. Both Claude Code and pi read this file.
+Guidance for coding agents (and humans) working on this repository. pi reads this file.
 
 ## Commands
 
