@@ -19,18 +19,19 @@
 
 ## 执行引擎与输入
 
-| 偏离                     | 上游 → 本仓库                                                                                                                                                     | 类别             | 用户可见 |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | -------- |
-| 执行引擎                 | Claude Code（Agent SDK）→ pi SDK，在 action 进程内运行（`src/runner/`，ADR-0001）                                                                                 | `pi-capability`  | 否       |
-| 模型与认证               | `anthropic_api_key`、OAuth token、`use_bedrock` 等 → 必填的 `model`（`provider/id`），key 按 pi 的变量名经 `env:` 传入，或用 `api_key`                            | `multi-provider` | 是       |
-| 透传参数                 | `claude_args` → `pi_args`，只接受部分 pi 参数，其余报错（`src/runner/pi-args.ts`）                                                                                | `pi-capability`  | 是       |
-| 删除的输入               | 见下表；设置了就在 prepare 阶段失败，并指向迁移对照表（`src/entrypoints/removed-inputs.ts`）                                                                      | 见下表           | 是       |
-| 仓库的设置文件           | 读取 `.claude/settings.json` → 不读 `.pi/settings.json`，设置只在内存中（`src/runner/run-pi.ts`）                                                                 | `pi-capability`  | 是       |
-| Claude Code 专用环境变量 | `ANTHROPIC_*`、`CLAUDE_CODE_*`（含 `SCRIPT_CAPS`、`SUBPROCESS_ENV_SCRUB`）、`OTEL_*` 生效 → 不读                                                                  | `pi-capability`  | 是       |
-| skills 输入              | 无 → 新增 `skills`：prepare 阶段用 `gh skill install` 装到 checkout 之外的目录，pi 以 `--skill` 路径的方式加载，不受 `--no-skills` 影响（`src/runner/skills.ts`） | `pi-capability`  | 是       |
-| inline comment 分类      | Claude Haiku，用 `anthropic_api_key` → 经 pi 用 `model` 分类，或用新增的 `classify_model`；失败时全部发布（`src/runner/classify-comments.ts`）                    | `multi-provider` | 是       |
-| 触发词、标签、分支前缀   | `@claude` / `claude` / `claude/` → `@pi` / `pi` / `pi/`                                                                                                           | `branding`       | 是       |
-| GitHub App 与 token 换取 | Anthropic 的服务和 `claude[bot]` → 本项目的服务（`services/token-exchange/`）和 `pi-agent-action[bot]`；接口和错误码不变（`src/github/token.ts`，ADR-0003）       | `branding`       | 是       |
+| 偏离                     | 上游 → 本仓库                                                                                                                                                                                                                                                     | 类别             | 用户可见 |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | -------- |
+| 执行引擎                 | Claude Code（Agent SDK）→ pi SDK，在 action 进程内运行（`src/runner/`，ADR-0001）                                                                                                                                                                                 | `pi-capability`  | 否       |
+| 模型与认证               | `anthropic_api_key`、OAuth token、`use_bedrock` 等 → 必填的 `model`（`provider/id`），key 按 pi 的变量名经 `env:` 传入，或用 `api_key`                                                                                                                            | `multi-provider` | 是       |
+| OpenAI 兼容端点          | 无 OpenAI provider → workflow 的 `OPENAI_BASE_URL` 覆盖 `openai` 的端点，主 Runner、compaction 和独立评论分类共用；只保留 pi 静态模型目录，不读 `models.json`、不做 OAuth 登录、不在失败时回退官方端点（`src/runner/model-runtime.ts`、`src/runner/run-plan.ts`） | `multi-provider` | 是       |
+| 透传参数                 | `claude_args` → `pi_args`，只接受部分 pi 参数，其余报错（`src/runner/pi-args.ts`）                                                                                                                                                                                | `pi-capability`  | 是       |
+| 删除的输入               | 见下表；设置了就在 prepare 阶段失败，并指向迁移对照表（`src/entrypoints/removed-inputs.ts`）                                                                                                                                                                      | 见下表           | 是       |
+| 仓库的设置文件           | 读取 `.claude/settings.json` → 不读 `.pi/settings.json`，设置只在内存中（`src/runner/run-pi.ts`）                                                                                                                                                                 | `pi-capability`  | 是       |
+| Claude Code 专用环境变量 | `ANTHROPIC_*`、`CLAUDE_CODE_*`（含 `SCRIPT_CAPS`、`SUBPROCESS_ENV_SCRUB`）、`OTEL_*` 生效 → 不读                                                                                                                                                                  | `pi-capability`  | 是       |
+| skills 输入              | 无 → 新增 `skills`：prepare 阶段用 `gh skill install` 装到 checkout 之外的目录，pi 以 `--skill` 路径的方式加载，不受 `--no-skills` 影响（`src/runner/skills.ts`）                                                                                                 | `pi-capability`  | 是       |
+| inline comment 分类      | Claude Haiku，用 `anthropic_api_key` → 经 pi 用 `model` 分类，或用新增的 `classify_model`；失败时全部发布（`src/runner/classify-comments.ts`）                                                                                                                    | `multi-provider` | 是       |
+| 触发词、标签、分支前缀   | `@claude` / `claude` / `claude/` → `@pi` / `pi` / `pi/`                                                                                                                                                                                                           | `branding`       | 是       |
+| GitHub App 与 token 换取 | Anthropic 的服务和 `claude[bot]` → 本项目的服务（`services/token-exchange/`）和 `pi-agent-action[bot]`；接口和错误码不变（`src/github/token.ts`，ADR-0003）                                                                                                       | `branding`       | 是       |
 
 删除的输入：
 

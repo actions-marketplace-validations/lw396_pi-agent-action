@@ -15,7 +15,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { redactSecrets } from "../github/utils/sanitizer";
-import { createModelRuntime } from "./model-runtime";
+import { createModelRuntime, type ModelRuntimeOptions } from "./model-runtime";
 import { isolatedBashTool } from "./bash-isolation";
 import { commentRedactionExtension } from "./comment-redaction";
 import { parsePiArgs } from "./pi-args";
@@ -36,7 +36,7 @@ import {
   type StructuredOutput,
 } from "./structured-output";
 
-export type RunnerOptions = {
+export type RunnerOptions = ModelRuntimeOptions & {
   /** Model in pi's `provider/id[:thinking]` form. Required. */
   model?: string;
   /**
@@ -182,7 +182,8 @@ export async function runPi(
     delete process.env[name];
   }
 
-  const modelRuntime = options.modelRuntime ?? (await createModelRuntime());
+  const modelRuntime =
+    options.modelRuntime ?? (await createModelRuntime(options));
   const model = await resolveModel(
     modelRuntime,
     modelReference,

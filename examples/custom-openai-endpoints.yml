@@ -1,0 +1,69 @@
+name: Custom OpenAI endpoints
+
+# Copy this workflow to .github/workflows/custom-openai-endpoints.yml.
+# Setup:
+# 1. Set repository variable OPENAI_BASE_URL to your trusted HTTPS API base URL,
+#    e.g. https://your-api.example.com/v1. Include /v1 when required.
+# 2. Set repository secret OPENAI_API_KEY to the endpoint's API key.
+#    The action does not perform interactive OAuth login.
+# 3. Replace <model-id> below with a model supported by both the endpoint and
+#    pi's pinned catalog. Use openai/<model-id>, not openai-codex/<model-id>.
+# 4. Add the endpoint's exact hostname to .github/egress-firewall.yaml.
+#    Keep mode: enforce and existing dependency/GitHub hosts. No wildcards.
+# Use an action release or pinned commit that includes OPENAI_BASE_URL support.
+# For unreleased changes, replace @v1 with the branch/commit you are testing.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04-firewall
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Require a custom endpoint
+        shell: bash
+        env:
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+        run: |
+          # An empty value would select the official OpenAI endpoint instead.
+          if [ -z "${OPENAI_BASE_URL//[[:space:]]/}" ]; then
+            echo "::error::Set OPENAI_BASE_URL to your custom API base URL."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Analyze the latest commit through the custom endpoint
+        uses: lw396/pi-agent-action@v1
+        with:
+          model: openai/<model-id>
+          # Use the workflow token: no GitHub App or id-token permission needed.
+          github_token: ${{ github.token }}
+          allowed_tools: "Bash(git log:*),Bash(git show:*)"
+          display_report: true
+          prompt: |
+            Analyze the latest commit in this repository.
+            Summarize its purpose, changed files and any concrete bugs you find.
+            Use git log and git show when needed.
+            Do not modify files, run builds or tests, push commits,
+            or post GitHub comments.
+            Return your findings in the final response for the job summary.
+        env:
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+# All openai requests, including compaction and OpenAI comment classification,
+# use this base URL. Failed requests do not fall back to the official API.
+# The Responses transport calls <base-url>/responses; the endpoint must
+# support streaming Responses and tool calls, not just Chat Completions.
+# Model discovery is not enabled.
+# To classify buffered inline comments in a review workflow, optionally set
+# classify_model: openai/<classification-model-id> with another supported chat
+# model. This example only analyzes a commit and does not post inline comments.

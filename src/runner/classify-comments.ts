@@ -11,7 +11,7 @@ import {
   resolveCliModel,
   type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
-import { createModelRuntime } from "./model-runtime";
+import { createModelRuntime, type ModelRuntimeOptions } from "./model-runtime";
 
 /**
  * Classification of buffered inline comments as real review feedback or
@@ -25,7 +25,7 @@ import { createModelRuntime } from "./model-runtime";
  * every comment is posted; another model is never tried.
  */
 
-export type ClassifyOptions = {
+export type ClassifyOptions = ModelRuntimeOptions & {
   /** The model input: the session's model, in pi's `provider/id` form. */
   model?: string;
   /** The classify_model input: a classifier or chat model, `provider/id`. */
@@ -204,7 +204,8 @@ export async function classifyComments(
   options: ClassifyOptions,
 ): Promise<boolean[] | null> {
   try {
-    const modelRuntime = options.modelRuntime ?? (await createModelRuntime());
+    const modelRuntime =
+      options.modelRuntime ?? (await createModelRuntime(options));
     const mainReference = options.model?.trim();
     const main = mainReference
       ? resolveCliModel({ cliModel: mainReference, modelRuntime }).model

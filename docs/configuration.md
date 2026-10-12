@@ -25,6 +25,33 @@ env:
   OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
 ```
 
+## Custom OpenAI endpoints
+
+Set `OPENAI_BASE_URL` in the action step's `env:` to route the `openai` provider through any trusted endpoint implementing the OpenAI Responses API. This can be a third-party model service, a self-hosted gateway or a local server; the action does not depend on a particular service or provider extension.
+
+```yaml
+with:
+  model: openai/<model-id>:high
+  # Optional: another chat model supported by the same endpoint
+  classify_model: openai/<classification-model-id>
+env:
+  OPENAI_BASE_URL: https://api.example.com/v1
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
+
+For a complete manually triggered, read-only workflow, see [Custom OpenAI endpoints](../examples/custom-openai-endpoints.yml).
+
+Use an API key accepted by your endpoint. The `api_key` input can supply that key instead of `OPENAI_API_KEY`; it still applies only to the provider of `model`. The action does not perform interactive OAuth login or persist credentials for custom endpoints.
+
+- Supply the full API base URL, including `/v1` when the service requires it. The action does not append `/v1`; the OpenAI Responses transport sends requests to `<base-url>/responses`. An endpoint that only implements Chat Completions (`/chat/completions`) is not supported by this override.
+- URLs must be absolute HTTP(S), without embedded credentials, query strings or fragments. Surrounding whitespace and trailing slashes are removed. Use HTTPS for remote endpoints; HTTP is available for local testing.
+- The override applies to every `openai` model operation, including compaction and the separate inline-comment classification step. Other providers, including `openai-codex` and Azure, are unchanged. Use `model: openai/<model-id>`, not `openai-codex/<model-id>`.
+- Models and their capabilities still come from pi's pinned static catalog. The endpoint must support the selected model ID, streaming Responses API and tool calls; unknown model aliases are not discovered automatically. Dedicated classifier models require their own API support (for OpenAI, Decisions); use a chat model for classification when the endpoint only supports Responses.
+- An unset or blank value preserves the official OpenAI endpoint. A failed custom-endpoint request does not fall back to the official API or another provider. Classification failures keep the existing behavior: every eligible buffered comment is posted.
+- Keep the endpoint domain on your runner's network allowlist. For this repository's firewall runner, add its exact hostname to `.github/egress-firewall.yaml` with a usage comment; do not disable enforcement or use wildcard hosts.
+
+`OPENAI_BASE_URL` is an action-supported environment override, not a new action input or pi CLI flag. The action continues to ignore `models.json`; no additional provider extension is required. Treat catalog cost figures as estimates, not the custom service's actual bill.
+
 ## Letting the agent run commands
 
 The agent can always read files. Everything else needs a rule in `allowed_tools`. List each command the job runs by its prefix:

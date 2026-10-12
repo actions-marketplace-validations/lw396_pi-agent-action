@@ -19,6 +19,7 @@ describe("readRunnerInputs", () => {
     const inputs = readRunnerInputs({
       MODEL: "openai/gpt-5",
       API_KEY: "key",
+      OPENAI_BASE_URL: " https://proxy.example.com/prefix/v1/ ",
       PI_ARGS: "--thinking high",
       INPUT_ALLOWED_TOOLS: "Bash(npm test)",
       INPUT_DISALLOWED_TOOLS: "Write",
@@ -30,6 +31,7 @@ describe("readRunnerInputs", () => {
     expect(inputs).toEqual({
       model: "openai/gpt-5",
       apiKey: "key",
+      openaiBaseUrl: "https://proxy.example.com/prefix/v1",
       piArgs: "--thinking high",
       allowedTools: [
         { text: "Bash(npm test)", tool: "bash", pattern: "npm test" },
@@ -42,6 +44,43 @@ describe("readRunnerInputs", () => {
       allowedBashEnv: "NPM_TOKEN",
       showFullOutput: false,
     });
+  });
+
+  test.each([undefined, "", "   "])(
+    "ignores an empty OPENAI_BASE_URL: %p",
+    (value) => {
+      expect(
+        readRunnerInputs({ OPENAI_BASE_URL: value }).openaiBaseUrl,
+      ).toBeUndefined();
+    },
+  );
+
+  test("accepts a local HTTP proxy", () => {
+    expect(
+      readRunnerInputs({ OPENAI_BASE_URL: "http://127.0.0.1:8317/v1" })
+        .openaiBaseUrl,
+    ).toBe("http://127.0.0.1:8317/v1");
+  });
+
+  test.each([
+    "proxy.example.com/v1",
+    "/v1",
+    "file:///tmp/proxy",
+    "ftp://proxy.example.com/v1",
+    "https://user:secret-password@proxy.example.com/v1",
+    "https://proxy.example.com/v1?key=secret-password",
+    "https://proxy.example.com/v1#secret-password",
+  ])("rejects an invalid OPENAI_BASE_URL without echoing it: %p", (value) => {
+    try {
+      readRunnerInputs({ OPENAI_BASE_URL: value });
+      throw new Error("Expected validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toContain("OPENAI_BASE_URL");
+      expect(message).not.toContain(value);
+      expect(message).not.toContain("secret-password");
+    }
   });
 
   test("fails on a tool rule the Runner cannot enforce", () => {
@@ -125,6 +164,7 @@ describe("runnerOptions", () => {
     const options = runnerOptions(
       readRunnerInputs({
         MODEL: "openai/gpt-5",
+        OPENAI_BASE_URL: "https://proxy.example.com/v1",
         ALLOWED_NON_WRITE_USERS: "*",
         INPUT_SHOW_FULL_OUTPUT: "true",
       }),
@@ -133,6 +173,7 @@ describe("runnerOptions", () => {
 
     expect(options).toMatchObject({
       model: "openai/gpt-5",
+      openaiBaseUrl: "https://proxy.example.com/v1",
       isolateBash: true,
       showFullOutput: true,
     });
