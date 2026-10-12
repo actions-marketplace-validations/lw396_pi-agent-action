@@ -134,6 +134,29 @@ with:
 
 A skill is instructions the agent follows and scripts it may run, written by someone else. Review it before you list it, and pin it so it cannot change under you. The scripts still need `allowed_tools` rules to run.
 
+### Pi packages
+
+Use `packages` for [native pi packages](https://pi.dev/docs/latest/packages) that bundle extensions, skills, prompt templates and themes. Keep `skills` for ordinary GitHub skill repositories; both inputs can be used together.
+
+```yaml
+with:
+  packages: |
+    # Examples; replace these with packages you have reviewed.
+    npm:@example/pi-tools@1.2.3
+    git:github.com/example/pi-review@v1.0.0
+  allowed_tools: package_review
+```
+
+- Each non-empty, non-comment line is one source, not a `pi install` command. Supported sources are `npm:NAME[@VERSION]` (including scoped names, tags and simple ranges such as `^1.2.3`) and `git:HOST/OWNER/REPO[@REF]`, also with an explicit HTTP(S) URL after `git:`. Shorthand Git sources use HTTPS. Local paths, bare URLs, SSH sources, embedded credentials and install flags are not supported.
+- Pin npm packages to exact versions and Git packages to full commit hashes for reproducible CI. Tags and branches can move. Without a version/ref, pi resolves the package's current default.
+- The Runner installs packages and their dependencies through the action's pinned pi SDK before calling the model. npm sources need `npm`; Git sources need `git`, and Git packages with a `package.json` also need `npm`. Private sources use the runner's npm/Git authentication; `GH_TOKEN` alone is not automatically Git authentication. Configure credentials in trusted setup steps, not in a source URL.
+- Installations live in a per-run directory under `RUNNER_TEMP` (or the system temp directory), outside the checkout. The action does not persist package declarations or read/write `~/.pi/agent/settings.json` or the repository's `.pi/settings.json`.
+- All resources declared by the package manifest are loaded; otherwise pi uses its conventional resource directories. Explicit package skills and prompts survive `--no-skills` and `--no-prompt-templates` in `pi_args`, which only disable automatic discovery. Themes are resolved too, but this headless action has no interactive theme display.
+- Installation or resource loading failures stop the run before calling the model. A package with no loadable pi resources fails too, including a missing package that pi would otherwise skip in offline mode. These are Runner startup failures, not `skills` prepare failures.
+- Package tools still need `allowed_tools` rules; `disallowed_tools` takes precedence. Use the actual tool names the package registers, not the package name.
+
+**Packages are trusted code, not sandboxed tools.** Extensions execute inside the action process, and dependency installation may run lifecycle scripts. They can access files, network and credentials directly, outside `allowed_tools` and bash isolation. Review packages and their dependencies, set sources only in trusted workflow configuration, and never derive them from issue/PR text or model output. Keep minimal workflow permissions and the runner's egress firewall; allow only the exact registry/Git hosts and package endpoints the job needs. See [Package trust](./security.md#package-trust).
+
 ## Reading CI results
 
 With `actions: read`, the agent gets tools to read workflow runs and job logs on the pull request it works on (`mcp__github_ci__get_ci_status`, `mcp__github_ci__get_workflow_run_details`, `mcp__github_ci__download_job_log`), so `@pi why did CI fail?` works.
@@ -209,4 +232,4 @@ with:
   path_to_bun_executable: /nix/store/.../bin/bun
 ```
 
-Use the Bun version the action pins (see `action.yml`); others may not work.
+Use the Bun version the action pins (see `action.yml`); others may not work. The executable path must be a single line: CR/LF characters are rejected before its directory is added to the job's `PATH`. Spaces in the path are supported.

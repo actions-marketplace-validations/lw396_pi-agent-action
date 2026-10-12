@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import { mkdtemp } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, sep } from "path";
 import {
   createAgentSession,
   createCodemodeExtension,
@@ -19,6 +19,7 @@ import { createModelRuntime, type ModelRuntimeOptions } from "./model-runtime";
 import { isolatedBashTool } from "./bash-isolation";
 import { commentRedactionExtension } from "./comment-redaction";
 import { parsePiArgs } from "./pi-args";
+import { resolvePackages } from "./packages";
 import { expandSlashCommand } from "./slash-command";
 import {
   writeExecutionFile,
@@ -64,6 +65,8 @@ export type RunnerOptions = ModelRuntimeOptions & {
    * `--skill` path in pi, so `--no-skills` in pi_args does not drop them.
    */
   skillsDir?: string;
+  /** Explicit pi packages, installed outside the checkout for this run only. */
+  packages?: string[];
   /**
    * Let edit and write change files in the working directory without a rule,
    * like Claude Code's acceptEdits permission mode in Upstream's tag mode.
@@ -190,8 +193,8 @@ export async function runPi(
     options.apiKey,
   );
 
-  // pi's global directory. Settings live in memory and sessions are not
-  // persisted, so this stays empty; it only keeps pi away from ~/.pi/agent.
+  // A per-run pi directory, outside the checkout and away from ~/.pi/agent.
+  // Only ephemeral packages and runtime logs live here, not saved settings.
   const agentDir = await mkdtemp(
     join(process.env.RUNNER_TEMP || tmpdir(), "pi-agent-"),
   );
@@ -202,6 +205,12 @@ export async function runPi(
   // once: values applied afterwards with applyOverrides() are lost on reload
   // (test/pi-sdk/settings.test.ts).
   const settingsManager = SettingsManager.inMemory({});
+  const packagePaths = await resolvePackages(
+    options.packages ?? [],
+    cwd,
+    agentDir,
+    settingsManager,
+  );
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
@@ -216,10 +225,54 @@ export async function runPi(
         join(agentDir, "mcp.log"),
       ),
     ],
-    additionalSkillPaths: options.skillsDir ? [options.skillsDir] : [],
+    ...packagePaths,
+    additionalSkillPaths: [
+      ...(options.skillsDir ? [options.skillsDir] : []),
+      ...(packagePaths.additionalSkillPaths ?? []),
+    ],
     ...piArgs.resources,
   });
-  await resourceLoader.reload();
+  try {
+    await resourceLoader.reload();
+  } catch (error) {
+    if (!options.packages?.length) throw error;
+    throw new Error(
+      `packages: installation or loading failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (options.packages?.length) {
+    const errors = resourceLoader.getExtensions().errors;
+    if (errors.length) {
+      throw new Error(
+        `packages: extension loading failed: ${errors.map((error) => `${error.path}: ${error.error}`).join("; ")}`,
+      );
+    }
+    const skills = resourceLoader.getSkills();
+    const prompts = resourceLoader.getPrompts();
+    const themes = resourceLoader.getThemes();
+    const loadedPaths = new Set([
+      ...skills.skills.map((skill) => skill.filePath),
+      ...prompts.prompts.map((prompt) => prompt.filePath),
+      ...themes.themes.map((theme) => theme.sourceInfo?.path),
+    ]);
+    const failed = [
+      ...skills.diagnostics,
+      ...prompts.diagnostics,
+      ...themes.diagnostics,
+    ].filter(
+      (diagnostic) =>
+        diagnostic.type !== "collision" &&
+        diagnostic.path?.startsWith(`${agentDir}${sep}`) &&
+        !loadedPaths.has(diagnostic.path),
+    );
+    // pi warns and skips invalid resources. Fail on skipped package resources,
+    // but retain its normal warnings for resources that did load and collisions.
+    if (failed.length) {
+      throw new Error(
+        `packages: resource loading failed: ${failed.map((diagnostic) => `${diagnostic.path}: ${diagnostic.message}`).join("; ")}`,
+      );
+    }
+  }
   const command = expandRequestedCommand(options.userRequest, resourceLoader);
 
   const sessionManager = SessionManager.inMemory(cwd);

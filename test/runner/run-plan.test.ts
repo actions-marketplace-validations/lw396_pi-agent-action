@@ -39,6 +39,7 @@ describe("readRunnerInputs", () => {
       disallowedTools: [{ text: "Write", tool: "write" }],
       jsonSchema: '{"type":"object"}',
       skills: [["github/awesome-copilot", "git-commit@v1.2.0"]],
+      packages: [],
       untrustedInput: false,
       isolateBash: false,
       allowedBashEnv: "NPM_TOKEN",
@@ -81,6 +82,43 @@ describe("readRunnerInputs", () => {
       expect(message).not.toContain(value);
       expect(message).not.toContain("secret-password");
     }
+  });
+
+  test("passes explicit package sources from the workflow to the Runner", () => {
+    const options = runnerOptions(
+      readRunnerInputs({
+        INPUT_PACKAGES: `
+          # One native pi source per line
+          npm:@example/pi-tools@1.2.3
+
+          git:github.com/example/pi-review@v2
+        `,
+      }),
+      NO_MODE_SETTINGS,
+    );
+
+    expect(options.packages).toEqual([
+      "npm:@example/pi-tools@1.2.3",
+      "git:github.com/example/pi-review@v2",
+    ]);
+  });
+
+  test.each([
+    "./local-package",
+    "https://github.com/example/pi-tools",
+    "npm:",
+    "npm:../package",
+    "npm:tool --prefix ./",
+    "npm:tool && echo bad",
+    "git:owner/repo",
+    "git:github.com/owner/repo@",
+    "git:github.com/owner/repo@--orphan",
+    "git:github.com/owner/../repo",
+    "git:https://user:secret-password@example.com/owner/repo",
+  ])("rejects a packages line that is not a remote source: %p", (source) => {
+    expect(() => readRunnerInputs({ INPUT_PACKAGES: source })).toThrow(
+      "packages:",
+    );
   });
 
   test("fails on a tool rule the Runner cannot enforce", () => {

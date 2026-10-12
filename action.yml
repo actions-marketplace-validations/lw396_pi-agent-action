@@ -96,6 +96,17 @@ inputs:
       runner; a private repository needs a github_token that can read it.
     required: false
     default: ""
+  packages:
+    description: >-
+      Trusted pi packages, one native source per line: npm:NAME[@VERSION]
+      or git:HOST/OWNER/REPO[@REF] (also explicit HTTP(S) after git:).
+      Installed outside the checkout for this run only; no settings files
+      are read or changed. Explicit package skills and prompts load even
+      with --no-skills or --no-prompt-templates in pi_args. Needs npm and
+      git for their respective sources. Extensions and dependency install
+      scripts run with the action's permissions, not in a tool sandbox.
+    required: false
+    default: ""
   allowed_tools:
     description: >-
       Tools the agent may use, in Claude Code's rule syntax, separated by
@@ -302,11 +313,20 @@ runs:
       shell: bash
       env:
         PATH_TO_BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable }}
-      run: |
+      # This workflow-owned executable path is intentionally added to PATH.
+      # zizmor cannot track the CR/LF validation below; ignore only this step.
+      run: | # zizmor: ignore[github-env] validated single-line workflow input
+        # GITHUB_PATH is line-delimited: reject extra entries before writing.
+        case "$PATH_TO_BUN_EXECUTABLE" in
+          *$'\r'*|*$'\n'*)
+            echo "path_to_bun_executable must not contain CR or LF." >&2
+            exit 1
+            ;;
+        esac
         echo "Using custom Bun executable: $PATH_TO_BUN_EXECUTABLE"
         # Add the directory containing the custom executable to PATH
-        BUN_DIR=$(dirname "$PATH_TO_BUN_EXECUTABLE")
-        echo "$BUN_DIR" >> "$GITHUB_PATH"
+        BUN_DIR=$(dirname -- "$PATH_TO_BUN_EXECUTABLE")
+        printf '%s\n' "$BUN_DIR" >> "$GITHUB_PATH"
 
     - name: Install Dependencies
       shell: bash
@@ -406,6 +426,7 @@ runs:
         API_KEY: ${{ inputs.api_key }}
         PI_ARGS: ${{ inputs.pi_args }}
         INPUT_SKILLS: ${{ inputs.skills }}
+        INPUT_PACKAGES: ${{ inputs.packages }}
         INPUT_ALLOWED_TOOLS: ${{ inputs.allowed_tools }}
         INPUT_DISALLOWED_TOOLS: ${{ inputs.disallowed_tools }}
         JSON_SCHEMA: ${{ inputs.json_schema }}
@@ -476,12 +497,14 @@ runs:
     - name: Revoke app token
       if: always() && inputs.github_token == '' && steps.run.outputs.github_token != '' && steps.run.outputs.skipped_due_to_workflow_validation_mismatch != 'true'
       shell: bash
+      env:
+        TOKEN_TO_REVOKE: ${{ steps.run.outputs.github_token }}
       run: |
         curl -L \
           --connect-timeout 5 \
           --max-time 10 \
           -X DELETE \
           -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${{ steps.run.outputs.github_token }}" \
+          -H "Authorization: Bearer $TOKEN_TO_REVOKE" \
           -H "X-GitHub-Api-Version: 2022-11-28" \
           ${GITHUB_API_URL:-https://api.github.com}/installation/token || true

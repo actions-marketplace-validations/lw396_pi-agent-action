@@ -48,8 +48,8 @@ Start the request with a slash command to run instructions kept in the repositor
 @pi /triage 42 needs-info
 ```
 
-- `/skill:<name> [text]` loads the skill `<name>` from `.pi/skills/` or `.agents/skills/` and adds your text after it.
-- `/<name> [args]` runs the prompt template `.pi/prompts/<name>.md`, with `$1`, `$@` and the like replaced by the arguments.
+- `/skill:<name> [text]` loads the skill `<name>` from `.pi/skills/`, `.agents/skills/`, or the `skills`/`packages` inputs and adds your text after it.
+- `/<name> [args]` runs a prompt template from `.pi/prompts/` or a `packages` input, with `$1`, `$@` and the like replaced by the arguments.
 
 The command must come right after the trigger phrase. An unknown name is left as text for the agent to read. Skills also load without a command when a request matches their description. On pull requests, these files come from the base branch.
 
@@ -59,12 +59,13 @@ Running commands other than `git add`, `commit` and `push` needs `allowed_tools`
 
 ### Model
 
-| Input     | Description                                                                                                                                                                                                                                                        | Default |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `model`   | **Required.** The model, as `<provider>/<model-id>`, optionally with `:<thinking-level>` (e.g. `openai/<model-id>:high`). See [Model providers](./setup.md#model-providers)                                                                                        | -       |
-| `api_key` | API key for the `model` provider, used instead of the provider's environment variable                                                                                                                                                                              | -       |
-| `skills`  | Agent skills to install with `gh skill install`, one per line: `OWNER/REPO <skill>[@version]`, or `OWNER/REPO --all`; `--pin` and `--allow-hidden-dirs` are also accepted. See [Skills from other repositories](./configuration.md#skills-from-other-repositories) | `""`    |
-| `pi_args` | Extra pi flags. Supported: `--thinking`, `--system-prompt`, `--append-system-prompt`, `--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `--no-skills`, `--no-prompt-templates`, `--no-context-files`. Any other flag fails the run                 | `""`    |
+| Input      | Description                                                                                                                                                                                                                                                        | Default |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `model`    | **Required.** The model, as `<provider>/<model-id>`, optionally with `:<thinking-level>` (e.g. `openai/<model-id>:high`). See [Model providers](./setup.md#model-providers)                                                                                        | -       |
+| `api_key`  | API key for the `model` provider, used instead of the provider's environment variable                                                                                                                                                                              | -       |
+| `skills`   | Agent skills to install with `gh skill install`, one per line: `OWNER/REPO <skill>[@version]`, or `OWNER/REPO --all`; `--pin` and `--allow-hidden-dirs` are also accepted. See [Skills from other repositories](./configuration.md#skills-from-other-repositories) | `""`    |
+| `packages` | Trusted pi packages, one `npm:NAME[@VERSION]` or `git:HOST/OWNER/REPO[@REF]` per line. Installs outside the checkout; extensions run as code inside the action. See [Pi packages](./configuration.md#pi-packages)                                                  | `""`    |
+| `pi_args`  | Extra pi flags. Supported: `--thinking`, `--system-prompt`, `--append-system-prompt`, `--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `--no-skills`, `--no-prompt-templates`, `--no-context-files`. Any other flag fails the run                 | `""`    |
 
 ### Prompt and output
 

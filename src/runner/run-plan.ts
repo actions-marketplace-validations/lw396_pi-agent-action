@@ -2,6 +2,7 @@ import type { McpServers } from "./mcp-servers";
 import { parseOpenAIBaseUrl, type ModelRuntimeOptions } from "./model-runtime";
 import type { RunnerOptions } from "./run-pi";
 import { parseSkills, type SkillInstall } from "./skills";
+import { parsePackages } from "./packages";
 import { parseToolRules, type ToolRule } from "./tool-rules";
 
 /**
@@ -18,6 +19,8 @@ export type RunnerInputs = ModelRuntimeOptions & {
   jsonSchema?: string;
   /** The skills input: the `gh skill install` calls prepare makes. */
   skills: SkillInstall[];
+  /** Explicit native pi package sources supplied by the workflow. */
+  packages: string[];
   /**
    * allowed_non_write_users is set, so content from users without write
    * access can reach the model. Prepare then keeps the GitHub token out of
@@ -49,8 +52,8 @@ export type ModeRunSettings = {
 
 /**
  * Read the Runner's inputs. Throws on a tool rule the action cannot enforce
- * as written, or a skills line it would not install as written, so the run
- * fails before anything is prepared.
+ * as written, or an invalid skills/packages line, so the run fails before
+ * anything is prepared.
  */
 export function readRunnerInputs(env: NodeJS.ProcessEnv): RunnerInputs {
   const untrustedInput = !!env.ALLOWED_NON_WRITE_USERS;
@@ -66,6 +69,7 @@ export function readRunnerInputs(env: NodeJS.ProcessEnv): RunnerInputs {
     ),
     jsonSchema: env.JSON_SCHEMA,
     skills: parseSkills(env.INPUT_SKILLS),
+    packages: parsePackages(env.INPUT_PACKAGES),
     untrustedInput,
     isolateBash: untrustedInput && env.SUBPROCESS_ISOLATION !== "false",
     allowedBashEnv: env.ALLOWED_BASH_ENV,
@@ -86,6 +90,7 @@ export function runnerOptions(
     apiKey: inputs.apiKey,
     openaiBaseUrl: inputs.openaiBaseUrl,
     piArgs: inputs.piArgs,
+    packages: inputs.packages,
     // The mode's own rules come first, then the workflow's allowed_tools.
     allowedTools: [
       ...parseToolRules(mode.allowedTools.join("\n"), "allowed_tools"),

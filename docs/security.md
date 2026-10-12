@@ -43,6 +43,16 @@ pi-agent-action keeps claude-code-action's access checks, token handling and pro
 
 Allow only the tools the job needs, keep workflow `permissions:` minimal, and where you can, run the job on a runner that filters outbound network traffic.
 
+## Package trust
+
+The `packages` input opts into third-party code with the action's operating-system permissions. pi extensions run in-process with access to the provider keys, GitHub token, files and network. Dependency installation may execute lifecycle scripts with the job's environment.
+
+`allowed_tools` and `disallowed_tools` govern calls through pi's tool runtime, including package tools. They do **not** sandbox extension factories, event handlers, direct filesystem/network access or child processes an extension starts. Bash isolation applies only to the action's bash tool, not arbitrary extension code.
+
+Review packages and their dependencies before enabling them. Pin npm versions and Git commit hashes, and set sources only in trusted workflow configuration: never interpolate issue/PR text or model output into `packages`. Installation outside the checkout prevents accidental commits, not code execution. Retain minimal job permissions, narrow tool rules and the egress firewall. Source URLs must not contain credentials; configure npm/Git authentication separately in trusted steps.
+
+See [Pi packages](./configuration.md#pi-packages) for supported sources and failure behavior.
+
 ## Bash isolation (`allowed_non_write_users`)
 
 When `allowed_non_write_users` is set, bash commands are isolated. Without it, bash commands see the agent's whole environment, including the provider key and `GH_TOKEN`, as in claude-code-action.
