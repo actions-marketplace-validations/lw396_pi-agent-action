@@ -157,6 +157,237 @@ describe("generatePrompt", () => {
     expect(prompt).not.toContain("filename\tstatus\tadditions\tdeletions\tsha"); // since it's not a PR
   });
 
+  test("requires full implementation and reports genuine blockers without marking incomplete work done", () => {
+    for (const isPR of [false, true]) {
+      for (const useCommitSigning of [false, true]) {
+        const envVars: PreparedContext = {
+          repository: "owner/repo",
+          trackingCommentId: "12345",
+          triggerPhrase: "@pi",
+          eventData: isPR
+            ? {
+                eventName: "pull_request_review_comment",
+                isPR: true,
+                prNumber: "456",
+                commentBody: "@pi implement the requested changes",
+                baseBranch: "main",
+              }
+            : {
+                eventName: "issue_comment",
+                commentId: "67890",
+                isPR: false,
+                issueNumber: "789",
+                commentBody: "@pi complete this issue",
+                baseBranch: "main",
+                agentBranch: "pi/issue-789",
+              },
+        };
+
+        const prompt = generatePrompt(
+          envVars,
+          mockGitHubData,
+          useCommitSigning,
+          "tag",
+        );
+
+        expect(prompt).toContain(
+          "complete every requested requirement and acceptance criterion",
+        );
+        expect(prompt).toContain(
+          "Existing tests passing does not prove that new requirements are implemented",
+        );
+        expect(prompt).toContain("Try permitted alternatives before stopping");
+        expect(prompt).toContain(
+          "Complexity, the amount of work, or unavailable optional review tooling is not a blocker",
+        );
+        expect(prompt).toContain(
+          "Never mark unimplemented or unverified tasks as completed",
+        );
+        expect(prompt).toContain(
+          "leave unfinished checklist items unchecked and report the blocker",
+        );
+        expect(prompt).toContain(
+          "do not discard it merely to make a partial result pass existing tests",
+        );
+        expect(prompt).not.toContain("Or explain why it's too complex");
+        expect(prompt).not.toContain("simple to moderate complexity");
+        expect(prompt).toContain(
+          'When asked to "review" code, read the code and provide review feedback (do not implement changes unless explicitly asked)',
+        );
+      }
+    }
+  });
+
+  test("uses concise environment and completion contracts instead of a prescribed reasoning workflow", () => {
+    const context: PreparedContext = {
+      repository: "owner/repo",
+      trackingCommentId: "12345",
+      triggerPhrase: "@pi",
+      eventData: {
+        eventName: "pull_request_review_comment",
+        isPR: true,
+        prNumber: "456",
+        commentBody: "@pi review this change",
+        baseBranch: "release/next",
+      },
+    };
+
+    for (const signing of [false, true]) {
+      const prompt = generatePrompt(context, mockGitHubData, signing, "tag");
+      for (const obsolete of [
+        "Think carefully",
+        "<analysis>",
+        "Follow these steps:",
+        "1. Create a Todo List:",
+        "For Straightforward Changes:",
+        "For Complex Changes:",
+        "CRITICAL:",
+        "IMPORTANT:",
+        "Always create a new branch",
+        "--allowedTools",
+      ]) {
+        expect(prompt).not.toContain(obsolete);
+      }
+      expect(prompt).toContain("AGENTS.md");
+      expect(prompt).toContain("CLAUDE.md");
+      expect(prompt).toContain("not independent instructions");
+      expect(prompt).toContain("Do not create or switch branches");
+      expect(prompt).toContain("git diff origin/release/next...HEAD");
+      expect(prompt).toContain("allowed_tools and disallowed_tools");
+      expect(prompt).toContain("Do not bypass permission or safety checks");
+      expect(prompt).toContain(
+        "The user is not available for a live conversation",
+      );
+      expect(prompt).toContain("complete the remaining independent work");
+      expect(prompt).toContain("Do not add unrelated features or cleanup");
+      expect(prompt).toContain(
+        "do not repeat or broaden them without new evidence",
+      );
+      expect(prompt).toContain("Update at meaningful milestones");
+      expect(prompt).toContain("normal replies and tool output are not posted");
+      expect(prompt).toContain("mcp__github_comment__update_comment");
+      // Bound instruction overhead, not variable GitHub context or a model's behavior.
+      expect(
+        prompt.slice(prompt.indexOf("Request and scope:")).length,
+      ).toBeLessThan(8000);
+    }
+  });
+
+  test("selects the request source for each event, including body-based events without a mention", () => {
+    const events: Array<{
+      eventData: PreparedContext["eventData"];
+      source: string;
+    }> = [
+      ...(
+        [
+          "issue_comment",
+          "pull_request_review",
+          "pull_request_review_comment",
+        ] as const
+      ).map((eventName) => ({
+        eventData: {
+          eventName,
+          isPR: true as const,
+          prNumber: "456",
+          commentId: "67890",
+          commentBody: "@pi review this change",
+        },
+        source: "The request is in <trigger_comment>.",
+      })),
+      ...(["opened", "assigned", "labeled"] as const).map((eventAction) => ({
+        eventData: {
+          eventName: "issues" as const,
+          eventAction,
+          isPR: false as const,
+          issueNumber: "789",
+          baseBranch: "main",
+          agentBranch: "pi/issue-789",
+          labelTrigger: "pi-task",
+        },
+        source:
+          eventAction === "opened"
+            ? "The request is in <pr_or_issue_body>, following '@pi'."
+            : "The entire <pr_or_issue_body> defines the task; no trigger phrase is required.",
+      })),
+      ...(["pull_request", "pull_request_target"] as const).map(
+        (eventName) => ({
+          eventData: { eventName, isPR: true as const, prNumber: "456" },
+          source: "The request is in <pr_or_issue_body>.",
+        }),
+      ),
+    ];
+
+    for (const { eventData, source } of events) {
+      const prompt = generatePrompt(
+        {
+          repository: "owner/repo",
+          trackingCommentId: "12345",
+          triggerPhrase: "@pi",
+          eventData,
+        },
+        mockGitHubData,
+        false,
+        "tag",
+      );
+      expect(prompt).toContain(source);
+      expect(prompt).toContain("Only this request source defines the work");
+      expect(prompt).not.toContain("Only the comment/issue containing");
+      if (
+        eventData.eventName === "issues" ||
+        eventData.eventName === "pull_request" ||
+        eventData.eventName === "pull_request_target"
+      ) {
+        expect(prompt).not.toContain("The request is in <trigger_comment>.");
+      }
+    }
+  });
+
+  test("does not turn an empty review trigger into instructions from other comments", () => {
+    const prompt = generatePrompt(
+      {
+        repository: "owner/repo",
+        trackingCommentId: "12345",
+        triggerPhrase: "@pi",
+        eventData: {
+          eventName: "pull_request_review",
+          isPR: true,
+          prNumber: "456",
+          commentBody: "",
+        },
+      },
+      mockGitHubData,
+      false,
+      "tag",
+    );
+    expect(prompt).toContain(
+      "If it is absent or empty, report that no actionable request was provided",
+    );
+    expect(prompt).not.toContain("\n<trigger_comment>\n");
+  });
+
+  test("keeps workflow-provided tag instructions appended and agent prompts verbatim", () => {
+    const context: PreparedContext = {
+      repository: "owner/repo",
+      trackingCommentId: "12345",
+      triggerPhrase: "@pi",
+      prompt: "Use my own completion policy",
+      githubContext: createMockContext({
+        inputs: { prompt: "Use Spanish for comments" },
+      }),
+      eventData: { eventName: "pull_request", isPR: true, prNumber: "456" },
+    };
+    const prompt = generatePrompt(context, mockGitHubData, false, "tag");
+    expect(prompt).toContain(
+      "complete every requested requirement and acceptance criterion",
+    );
+    expect(prompt).toEndWith(
+      "<custom_instructions>\nUse Spanish for comments\n</custom_instructions>",
+    );
+    expect(generatePrompt(context, mockGitHubData, false, "agent")).toBe(
+      context.prompt!,
+    );
+  });
+
   test("should generate prompt for pull_request_review event", async () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
@@ -247,7 +478,9 @@ describe("generatePrompt", () => {
     expect(prompt).toContain(
       "[Create a PR](https://github.com/owner/repo/compare/main",
     );
-    expect(prompt).toContain("The target-branch should be 'main'");
+    expect(prompt).toContain(
+      "compare/main...claude/issue-789-20240101-1200?quick_pull=1",
+    );
   });
 
   test("should generate prompt for issue assigned event", async () => {
@@ -615,12 +848,10 @@ describe("generatePrompt", () => {
     expect(prompt).toContain(
       "You are already on the correct branch (claude/issue-789-20240101-1200)",
     );
-    expect(prompt).toContain(
-      "IMPORTANT: You are already on the correct branch (claude/issue-789-20240101-1200)",
-    );
+    expect(prompt).toContain("Do not create or switch branches");
     expect(prompt).toContain("Create a PR](https://github.com/");
     expect(prompt).toContain(
-      "If you created anything in your branch, your comment must include the PR URL",
+      "If you changed files on this branch, include a prefilled PR link",
     );
 
     // Should NOT contain PR-specific instructions
@@ -654,11 +885,9 @@ describe("generatePrompt", () => {
     expect(prompt).toContain(
       "You are already on the correct branch (claude/issue-123-20240101-1200)",
     );
+    expect(prompt).toContain("Do not create or switch branches");
     expect(prompt).toContain(
-      "IMPORTANT: You are already on the correct branch (claude/issue-123-20240101-1200)",
-    );
-    expect(prompt).toContain(
-      "The branch-name is the current branch: claude/issue-123-20240101-1200",
+      "compare/main...claude/issue-123-20240101-1200?quick_pull=1",
     );
   });
 
@@ -688,11 +917,11 @@ describe("generatePrompt", () => {
       "Create a PR](https://github.com/owner/repo/compare/main",
     );
     expect(prompt).toContain(
-      "The branch-name is the current branch: claude/pr-456-20240101-1200",
+      "compare/main...claude/pr-456-20240101-1200?quick_pull=1",
     );
-    expect(prompt).toContain("Reference to the original PR");
+    expect(prompt).toContain("reference the original PR in the body");
     expect(prompt).toContain(
-      "If you created anything in your branch, your comment must include the PR URL",
+      "If you changed files on this branch, include a prefilled PR link",
     );
 
     // Should NOT contain open PR instructions
@@ -728,7 +957,7 @@ describe("generatePrompt", () => {
     expect(prompt).not.toContain("Create a PR](https://github.com/");
     expect(prompt).not.toContain("You are already on the correct branch");
     expect(prompt).not.toContain(
-      "If you created anything in your branch, your comment must include the PR URL",
+      "If you changed files on this branch, include a prefilled PR link",
     );
   });
 
@@ -756,7 +985,7 @@ describe("generatePrompt", () => {
     expect(prompt).toContain(
       "Create a PR](https://github.com/owner/repo/compare/develop",
     );
-    expect(prompt).toContain("Reference to the original PR");
+    expect(prompt).toContain("reference the original PR in the body");
   });
 
   test("should handle PR review comment on closed PR with new branch", async () => {
@@ -782,9 +1011,9 @@ describe("generatePrompt", () => {
       "You are already on the correct branch (claude/pr-999-20240101-1400)",
     );
     expect(prompt).toContain("Create a PR](https://github.com/");
-    expect(prompt).toContain("Reference to the original PR");
+    expect(prompt).toContain("reference the original PR in the body");
     expect(prompt).toContain(
-      "If you created anything in your branch, your comment must include the PR URL",
+      "If you changed files on this branch, include a prefilled PR link",
     );
   });
 
@@ -810,7 +1039,7 @@ describe("generatePrompt", () => {
       "You are already on the correct branch (claude/pr-555-20240101-1500)",
     );
     expect(prompt).toContain("Create a PR](https://github.com/");
-    expect(prompt).toContain("Reference to the original PR");
+    expect(prompt).toContain("reference the original PR in the body");
   });
 
   test("should include git commands when useCommitSigning is false", async () => {
@@ -878,12 +1107,12 @@ describe("generatePrompt", () => {
     // Bash is off unless the workflow allows it through the allowed_tools
     // input; claude_args was removed and must not appear as live guidance.
     expect(prompt).toContain(
-      "Run arbitrary Bash commands (unless explicitly allowed through the allowed_tools input)",
+      "available tools and the allowed_tools and disallowed_tools rules",
     );
     expect(prompt).not.toContain("claude_args");
   });
 
-  test("does not mention allowed_tools when commit signing is off", async () => {
+  test("respects tool permissions even when commit signing is off", async () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
       trackingCommentId: "12345",
@@ -899,7 +1128,7 @@ describe("generatePrompt", () => {
 
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
-    expect(prompt).not.toContain("allowed_tools");
+    expect(prompt).toContain("allowed_tools and disallowed_tools");
     expect(prompt).not.toContain(
       "Run arbitrary Bash commands (unless explicitly allowed",
     );
