@@ -58,7 +58,8 @@ ${context.githubContext.inputs.prompt}
  * @param context - The prepared context containing event data and trigger phrase
  * @param githubData - The fetched GitHub data containing issue/PR body content
  * @returns The extracted user request text (e.g., "/review-pr" or "fix this bug"),
- *          or null for assigned/labeled events without an explicit trigger in the body
+ *          or null for assigned/labeled events without an explicit trigger in the body,
+ *          and when the workflow provides the prompt
  *
  * @example
  * // Comment event: "@pi /review-pr" -> returns "/review-pr"
@@ -70,6 +71,12 @@ function extractUserRequestFromContext(
   githubData: FetchDataResult,
 ): string | null {
   const { eventData, triggerPhrase } = context;
+
+  // With a workflow prompt (track_progress), the workflow author sets the
+  // task; a slash command in a PR description or comment must not replace it.
+  if (context.githubContext?.inputs?.prompt) {
+    return null;
+  }
 
   // For comment events, extract from comment body
   if (isCommentEvent(eventData) && eventData.commentBody) {

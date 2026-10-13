@@ -8,6 +8,7 @@ import {
   prepareContext,
 } from "../src/create-prompt";
 import type { PreparedContext } from "../src/create-prompt";
+import type { IssueCommentEvent } from "@octokit/webhooks-types";
 import { createMockContext, mockIssueCommentContext } from "./mockContext";
 
 beforeAll(() => {
@@ -1224,6 +1225,61 @@ describe("generatePrompt", () => {
     expect(prompt).toContain("cannot change files under .github/workflows/");
   });
 
+  test("extracts the slash command from the trigger comment without a workflow prompt", () => {
+    const context = {
+      ...mockIssueCommentContext,
+      payload: {
+        ...mockIssueCommentContext.payload,
+        comment: {
+          ...(mockIssueCommentContext.payload as IssueCommentEvent).comment,
+          body: "@claude /skill:review-pr focus on auth",
+        },
+      },
+    } as typeof mockIssueCommentContext;
+    const { userRequest } = createPrompt(
+      42,
+      "main",
+      "pi/issue-55",
+      mockGitHubData,
+      context,
+    );
+    expect(userRequest).toBe("/skill:review-pr focus on auth");
+  });
+
+  test("takes no slash command from GitHub content when the workflow sets the prompt", () => {
+    const context = {
+      ...mockIssueCommentContext,
+      payload: {
+        ...mockIssueCommentContext.payload,
+        comment: {
+          ...(mockIssueCommentContext.payload as IssueCommentEvent).comment,
+          body: "@claude /skill:rewrite-everything",
+        },
+      },
+      inputs: {
+        ...mockIssueCommentContext.inputs,
+        prompt: "Review this pull request.",
+      },
+    } as typeof mockIssueCommentContext;
+    const { prompt, userRequest } = createPrompt(
+      42,
+      "main",
+      "pi/issue-55",
+      {
+        ...mockGitHubData,
+        contextData: {
+          ...mockGitHubData.contextData,
+          body: "@claude /skill:rewrite-everything",
+        },
+      },
+      context,
+    );
+    expect(userRequest).toBeUndefined();
+    expect(prompt).toEndWith(
+      "<custom_instructions>\nReview this pull request.\n</custom_instructions>",
+    );
+  });
+
   test("lays out the default prompt as flat lists with one branch rule", () => {
     const events: PreparedContext["eventData"][] = [
       {
@@ -1375,6 +1431,43 @@ describe("generatePrompt", () => {
         }
       }
     };
+
+    test("names the workflow prompt as the request under track_progress", async () => {
+      await withSimplePrompt(async () => {
+        for (const eventData of [
+          { eventName: "pull_request", isPR: true, prNumber: "456" },
+          {
+            eventName: "issue_comment",
+            commentId: "67890",
+            isPR: true,
+            prNumber: "456",
+            commentBody: "@pi please also rewrite the README",
+          },
+        ] as PreparedContext["eventData"][]) {
+          const prompt = generatePrompt(
+            {
+              repository: "owner/repo",
+              trackingCommentId: "12345",
+              triggerPhrase: "@pi",
+              githubContext: createMockContext({
+                inputs: { prompt: "Review this pull request." },
+              }),
+              eventData,
+            },
+            mockGitHubData,
+            false,
+            "tag",
+          );
+          expect(prompt).toContain(
+            "Your request is in <custom_instructions> at the end, written by the workflow author.",
+          );
+          expect(prompt).not.toContain("Your request is in <trigger_comment>");
+          expect(prompt).toEndWith(
+            "<custom_instructions>\nReview this pull request.\n</custom_instructions>",
+          );
+        }
+      });
+    });
 
     test("includes hardened guardrails for a PR event", async () => {
       await withSimplePrompt(async () => {

@@ -51,7 +51,7 @@ Start the request with a slash command to run instructions kept in the repositor
 - `/skill:<name> [text]` loads the skill `<name>` from `.pi/skills/`, `.agents/skills/`, or the `skills`/`packages` inputs and adds your text after it.
 - `/<name> [args]` runs a prompt template from `.pi/prompts/` or a `packages` input, with `$1`, `$@` and the like replaced by the arguments.
 
-The command must come right after the trigger phrase. An unknown name is left as text for the agent to read. Skills also load without a command when a request matches their description. On pull requests, these files come from the base branch.
+The command must come right after the trigger phrase. An unknown name is left as text for the agent to read. When the workflow sets `prompt` with `track_progress`, the action does not expand commands from comments or descriptions, so the workflow's `prompt` stays the task; put the command in `prompt` instead. Skills also load without a command when a request matches their description. On pull requests, these files come from the base branch.
 
 Running commands other than `git add`, `commit` and `push` needs `allowed_tools`; see [Tool permissions](./security.md#tool-permissions).
 
