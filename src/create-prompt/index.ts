@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { randomBytes } from "node:crypto";
+import * as core from "@actions/core";
 import type { FetchDataResult } from "../github/data/fetcher";
 import type { ParsedGitHubContext } from "../github/context";
 import type { GitHubTokenSource } from "../github/token";
@@ -8,7 +9,6 @@ import { extractUserRequest } from "../utils/extract-user-request";
 import { generateDefaultPrompt } from "./default-prompt";
 import { prepareContext } from "./prepare-context";
 import { isCommentEvent, wrapInTag } from "./shared";
-import { generateSimplePrompt } from "./simple-prompt";
 import type { PreparedContext } from "./types";
 
 export type { CommonFields, PreparedContext } from "./types";
@@ -31,17 +31,22 @@ export function generatePrompt(
   }
 
   // Tag mode
-  const simple = process.env.USE_SIMPLE_PROMPT === "true";
-  const tagPrompt = simple
-    ? generateSimplePrompt(context, githubData, useCommitSigning)
-    : generateDefaultPrompt(context, githubData, useCommitSigning);
+  if (process.env.USE_SIMPLE_PROMPT === "true") {
+    core.warning(
+      "USE_SIMPLE_PROMPT is not supported and is ignored; the default tag-mode prompt is used.",
+    );
+  }
+  const tagPrompt = generateDefaultPrompt(
+    context,
+    githubData,
+    useCommitSigning,
+  );
 
   if (context.githubContext?.inputs?.prompt) {
-    // Only the default prompt marks its blocks with contentTagId.
     return `${tagPrompt.trimEnd()}\n\n${wrapInTag(
       "custom_instructions",
       context.githubContext.inputs.prompt,
-      simple ? undefined : context.contentTagId,
+      context.contentTagId,
     )}`;
   }
 
