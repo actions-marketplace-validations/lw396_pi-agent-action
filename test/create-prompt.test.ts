@@ -388,6 +388,56 @@ describe("generatePrompt", () => {
     );
   });
 
+  test("treats the workflow prompt as the request when track_progress puts it in tag mode", () => {
+    const eventDataCases: PreparedContext["eventData"][] = [
+      {
+        eventName: "pull_request",
+        eventAction: "opened",
+        isPR: true,
+        prNumber: "456",
+        baseBranch: "main",
+      },
+      {
+        eventName: "issues",
+        eventAction: "opened",
+        isPR: false,
+        issueNumber: "789",
+        baseBranch: "main",
+        agentBranch: "pi/issue-789",
+      },
+      {
+        eventName: "issue_comment",
+        commentId: "67890",
+        isPR: true,
+        prNumber: "456",
+        commentBody: "please also rewrite the README",
+        baseBranch: "main",
+      },
+    ];
+
+    for (const eventData of eventDataCases) {
+      const context: PreparedContext = {
+        repository: "owner/repo",
+        trackingCommentId: "12345",
+        triggerPhrase: "@pi",
+        githubContext: createMockContext({
+          inputs: { prompt: "Review this pull request." },
+        }),
+        eventData,
+      };
+      const prompt = generatePrompt(context, mockGitHubData, false, "tag");
+
+      expect(prompt).toContain(
+        "The request is in <custom_instructions> at the end of this prompt, written by the workflow author.",
+      );
+      expect(prompt).not.toContain("The request is in <pr_or_issue_body>");
+      expect(prompt).not.toContain("The request is in <trigger_comment>");
+      expect(prompt).toEndWith(
+        "<custom_instructions>\nReview this pull request.\n</custom_instructions>",
+      );
+    }
+  });
+
   test("should generate prompt for pull_request_review event", async () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",
