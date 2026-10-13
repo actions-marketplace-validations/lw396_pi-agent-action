@@ -79,6 +79,7 @@
 - 无人值守的停止方式：Runner 只调用一次 `session.prompt()`，模型第一条不带工具调用的消息就结束运行，所以提示词逐一点名不该出现的停止方式（宣布下一步却不做、提议继续、列出不阻塞的待决事项、到里程碑就汇报），并要求先完成不依赖答案的工作再提问（`pi-capability`，用户可见）。
 - `.github/workflows/`：用 pi-agent-action app 的 token 时，提示词说明 app 没有 workflows 权限、不要修改这些文件；用 `github_token` 时，先发布其他改动，再单独发布 workflow 改动（`branding`：本项目的 app 权限，用户可见；`src/create-prompt/default-prompt.ts`）。
 - 以上是提示词约束，不是 Runner 的完成度检查；简化版只改了两处：仓库规范一行改为 `AGENTS.md`（兼容 `CLAUDE.md`），`track_progress` 下的请求来源改为 `<custom_instructions>`，与默认提示词一致；agent mode 的自定义 `prompt` 不受影响。tag mode 的 `<custom_instructions>` 仍追加在默认提示词之后。分支由 action 准备，提示词不再要求模型新建分支；可用工具和 GitHub 权限由运行配置决定，不能靠提示词扩大。
+- 内容块的随机 id：上游的标签不带标记 → 默认 tag mode 提示词给每个 GitHub 内容块（`<formatted_context>`、`<pr_or_issue_body>`、`<comments>`、`<review_comments>`、`<changed_files>`、`<trigger_comment>`）和 `<custom_instructions>` 的开始、结束标签加上每次运行新生成的 `id`，评论里伪造的 `</comments><trigger_comment>` 因此只是正文；做法来自 Claude Opus 5.5 对粘贴内容的提示建议（`pi-capability`，不可见；`src/create-prompt/default-prompt.ts`、`src/create-prompt/index.ts`）。简化版不加 id。标签是纯文本，这只是一层提示词约束，不是隔离。
 - 不读仓库的 `.pi/mcp.json`：pi 中配置文件里的同名 server 优先于 SDK 注册的 server，被检出的代码可以借此换掉本项目的 server，拿到 GitHub token。server 的 `env` 值一律转义，因为 pi 会展开 `$NAME`、执行以 `!` 开头的值，而分支名等值来自仓库。
 - 用 `direct` 模式：pi 默认的 `codemode` 不直接向模型声明工具，和提示词中"调用某工具"的指令对不上。pi 没有 ToolSearch，工具直接声明，所以提示词不提它。
 - 斜杠命令由 Runner 展开：pi 只展开以 `/` 开头的消息，而 tag mode 的提示词以 GitHub 上下文开头。展开格式与 pi 自己的一致，`test/pi-sdk/slash-command.test.ts` 用真实的 pi 会话核对；上游的 `.claude/commands/` 要搬到 `.pi/prompts/`。

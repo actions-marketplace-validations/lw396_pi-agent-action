@@ -114,4 +114,10 @@ export type PreparedContext = CommonFields & {
   githubContext?: GitHubContext;
   /** Unset when unknown; the prompt then assumes nothing about the token. */
   githubTokenSource?: GitHubTokenSource;
+  /**
+   * A random id the default prompt puts on the opening and closing tag of each
+   * block of GitHub content, so text inside a block cannot close it and open a
+   * fake one. createPrompt sets a new one per run; unset, tags carry no id.
+   */
+  contentTagId?: string;
 };

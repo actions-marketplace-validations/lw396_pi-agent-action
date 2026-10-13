@@ -23,6 +23,15 @@ type CommentEventData = Extract<
   }
 >;
 
+/**
+ * Wrap content in a tag. With an id, both the opening and the closing tag
+ * carry it, as in <comments id="ab12">...</comments id="ab12">.
+ */
+export function wrapInTag(name: string, body: string, id?: string): string {
+  const attribute = id ? ` id="${id}"` : "";
+  return `<${name}${attribute}>\n${body}\n</${name}${attribute}>`;
+}
+
 /** Whether a comment or review triggered the run, carrying the request. */
 export function isCommentEvent(
   eventData: EventData,

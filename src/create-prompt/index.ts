@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 
+import { randomBytes } from "node:crypto";
 import type { FetchDataResult } from "../github/data/fetcher";
 import type { ParsedGitHubContext } from "../github/context";
 import type { GitHubTokenSource } from "../github/token";
 import { extractUserRequest } from "../utils/extract-user-request";
 import { generateDefaultPrompt } from "./default-prompt";
 import { prepareContext } from "./prepare-context";
-import { isCommentEvent } from "./shared";
+import { isCommentEvent, wrapInTag } from "./shared";
 import { generateSimplePrompt } from "./simple-prompt";
 import type { PreparedContext } from "./types";
 
@@ -30,20 +31,18 @@ export function generatePrompt(
   }
 
   // Tag mode
-  const tagPrompt =
-    process.env.USE_SIMPLE_PROMPT === "true"
-      ? generateSimplePrompt(context, githubData, useCommitSigning)
-      : generateDefaultPrompt(context, githubData, useCommitSigning);
+  const simple = process.env.USE_SIMPLE_PROMPT === "true";
+  const tagPrompt = simple
+    ? generateSimplePrompt(context, githubData, useCommitSigning)
+    : generateDefaultPrompt(context, githubData, useCommitSigning);
 
   if (context.githubContext?.inputs?.prompt) {
-    return (
-      tagPrompt.trimEnd() +
-      `
-
-<custom_instructions>
-${context.githubContext.inputs.prompt}
-</custom_instructions>`
-    );
+    // Only the default prompt marks its blocks with contentTagId.
+    return `${tagPrompt.trimEnd()}\n\n${wrapInTag(
+      "custom_instructions",
+      context.githubContext.inputs.prompt,
+      simple ? undefined : context.contentTagId,
+    )}`;
   }
 
   return tagPrompt;
@@ -114,6 +113,8 @@ export function createPrompt(
   const preparedContext: PreparedContext = {
     ...prepareContext(context, commentId.toString(), baseBranch, agentBranch),
     githubTokenSource,
+    // New each run, so content written before the run cannot know it.
+    contentTagId: randomBytes(6).toString("hex"),
   };
 
   const prompt = generatePrompt(
