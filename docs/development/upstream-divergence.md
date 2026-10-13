@@ -74,10 +74,10 @@
 | tag mode 提示词  | 让模型先用 ToolSearch 加载工具 → 不提 ToolSearch                                                                                                                                                                                      | `pi-capability` | 否       |
 | 评论中的斜杠命令 | `@claude /cmd` 作为单独的消息块交给 Claude Code，展开 `.claude/commands/cmd.md` → Runner 自己展开 `/skill:<name>` 和 `/<模板>`（`.pi/skills/`、`.agents/skills/`、`.pi/prompts/`），追加在提示词末尾（`src/runner/slash-command.ts`） | `pi-capability` | 是       |
 
-- 默认 tag mode 提示词：上游的固定五步流程和 `<analysis>` 输出要求 → 以请求来源、运行环境、发布方式和完成条件为核心的简洁指令；不指定模型或推理格式，遵循 `AGENTS.md` 及兼容的 `CLAUDE.md`，进度按里程碑更新（`multi-provider`，用户可见；`src/create-prompt/index.ts`）。请求来源按事件选择，assigned/labeled 事件读取整个 issue body，无需 trigger phrase；`track_progress` 让带 `prompt` 的运行进入 tag mode 时，请求来源是 workflow 的 `prompt`（`<custom_instructions>`），issue/PR 内容和评论只作上下文；仓库规范不授权额外任务，也不能覆盖工具和安全约束。
+- 默认 tag mode 提示词：上游的固定五步流程和 `<analysis>` 输出要求 → 以请求来源、运行环境、发布方式和完成条件为核心的简洁指令；不指定模型或推理格式，遵循 `AGENTS.md` 及兼容的 `CLAUDE.md`，进度按里程碑更新（`multi-provider`，用户可见；`src/create-prompt/default-prompt.ts`）。请求来源按事件选择，assigned/labeled 事件读取整个 issue body，无需 trigger phrase；`track_progress` 让带 `prompt` 的运行进入 tag mode 时，请求来源是 workflow 的 `prompt`（`<custom_instructions>`），issue/PR 内容和评论只作上下文；仓库规范不授权额外任务，也不能覆盖工具和安全约束。
 - 实现任务完成条件：复杂任务可解释后标记完成 → 默认 tag mode 要求完整实现，不自行缩减或扩大范围；阻塞时先完成其余独立工作，未完成项保持未勾选，并报告具体阻塞（`pi-capability`，用户可见）。只跑权限允许的、改动所需的检查，不无故重复或扩大；跑不了的检查要说明缺哪条 `allowed_tools` 规则，被拒绝的调用不换方式绕过。
 - 无人值守的停止方式：Runner 只调用一次 `session.prompt()`，模型第一条不带工具调用的消息就结束运行，所以提示词逐一点名不该出现的停止方式（宣布下一步却不做、提议继续、列出不阻塞的待决事项、到里程碑就汇报），并要求先完成不依赖答案的工作再提问（`pi-capability`，用户可见）。
-- `.github/workflows/`：用 pi-agent-action app 的 token 时，提示词说明 app 没有 workflows 权限、不要修改这些文件；用 `github_token` 时，先发布其他改动，再单独发布 workflow 改动（`branding`：本项目的 app 权限，用户可见；`src/create-prompt/index.ts`）。
+- `.github/workflows/`：用 pi-agent-action app 的 token 时，提示词说明 app 没有 workflows 权限、不要修改这些文件；用 `github_token` 时，先发布其他改动，再单独发布 workflow 改动（`branding`：本项目的 app 权限，用户可见；`src/create-prompt/default-prompt.ts`）。
 - 以上是提示词约束，不是 Runner 的完成度检查；简化版仅把仓库规范一行改为 `AGENTS.md`（兼容 `CLAUDE.md`），其余不变；agent mode 的自定义 `prompt` 不受影响。tag mode 的 `<custom_instructions>` 仍追加在默认提示词之后。分支由 action 准备，提示词不再要求模型新建分支；可用工具和 GitHub 权限由运行配置决定，不能靠提示词扩大。
 - 不读仓库的 `.pi/mcp.json`：pi 中配置文件里的同名 server 优先于 SDK 注册的 server，被检出的代码可以借此换掉本项目的 server，拿到 GitHub token。server 的 `env` 值一律转义，因为 pi 会展开 `$NAME`、执行以 `!` 开头的值，而分支名等值来自仓库。
 - 用 `direct` 模式：pi 默认的 `codemode` 不直接向模型声明工具，和提示词中"调用某工具"的指令对不上。pi 没有 ToolSearch，工具直接声明，所以提示词不提它。
