@@ -886,14 +886,12 @@ describe("generatePrompt", () => {
     // Should contain PR-specific instructions (git commands when not using signing)
     expect(prompt).toContain("scripts/git-push.sh origin");
     expect(prompt).toContain(
-      "Always push to the existing branch when triggered on a PR",
+      "The action has already checked out the pull request's branch",
     );
 
     // Should NOT contain Issue-specific instructions
-    expect(prompt).not.toContain("You are already on the correct branch (");
-    expect(prompt).not.toContain(
-      "IMPORTANT: You are already on the correct branch (",
-    );
+    expect(prompt).not.toContain("checked out the working branch (");
+    expect(prompt).not.toContain("You are already on the correct branch");
     expect(prompt).not.toContain("Create a PR](https://github.com/");
   });
 
@@ -916,7 +914,7 @@ describe("generatePrompt", () => {
 
     // Should contain Issue-specific instructions
     expect(prompt).toContain(
-      "You are already on the correct branch (claude/issue-789-20240101-1200)",
+      "The action has already checked out the working branch (claude/issue-789-20240101-1200)",
     );
     expect(prompt).toContain("Do not create or switch branches");
     expect(prompt).toContain("Create a PR](https://github.com/");
@@ -925,11 +923,9 @@ describe("generatePrompt", () => {
     );
 
     // Should NOT contain PR-specific instructions
+    expect(prompt).not.toContain("checked out the pull request's branch");
     expect(prompt).not.toContain(
-      "Push directly using mcp__github_file_ops__commit_files to the existing branch",
-    );
-    expect(prompt).not.toContain(
-      "Always push to the existing branch when triggered on a PR",
+      "The action has already checked out the pull request's branch",
     );
   });
 
@@ -953,7 +949,7 @@ describe("generatePrompt", () => {
 
     // Should contain the actual branch name with timestamp
     expect(prompt).toContain(
-      "You are already on the correct branch (claude/issue-123-20240101-1200)",
+      "The action has already checked out the working branch (claude/issue-123-20240101-1200)",
     );
     expect(prompt).toContain("Do not create or switch branches");
     expect(prompt).toContain(
@@ -981,7 +977,7 @@ describe("generatePrompt", () => {
 
     // Should contain branch-specific instructions like issues
     expect(prompt).toContain(
-      "You are already on the correct branch (claude/pr-456-20240101-1200)",
+      "The action has already checked out the working branch (claude/pr-456-20240101-1200)",
     );
     expect(prompt).toContain(
       "Create a PR](https://github.com/owner/repo/compare/main",
@@ -995,9 +991,7 @@ describe("generatePrompt", () => {
     );
 
     // Should NOT contain open PR instructions
-    expect(prompt).not.toContain(
-      "Push directly using mcp__github_file_ops__commit_files to the existing branch",
-    );
+    expect(prompt).not.toContain("checked out the pull request's branch");
   });
 
   test("should handle open PR without new branch", async () => {
@@ -1020,12 +1014,12 @@ describe("generatePrompt", () => {
     // Should contain open PR instructions (git commands when not using signing)
     expect(prompt).toContain("scripts/git-push.sh origin");
     expect(prompt).toContain(
-      "Always push to the existing branch when triggered on a PR",
+      "The action has already checked out the pull request's branch",
     );
 
     // Should NOT contain new branch instructions
     expect(prompt).not.toContain("Create a PR](https://github.com/");
-    expect(prompt).not.toContain("You are already on the correct branch");
+    expect(prompt).not.toContain("checked out the working branch (");
     expect(prompt).not.toContain(
       "If you changed files on this branch, include a prefilled PR link",
     );
@@ -1050,7 +1044,7 @@ describe("generatePrompt", () => {
 
     // Should contain new branch instructions
     expect(prompt).toContain(
-      "You are already on the correct branch (claude/pr-789-20240101-1230)",
+      "The action has already checked out the working branch (claude/pr-789-20240101-1230)",
     );
     expect(prompt).toContain(
       "Create a PR](https://github.com/owner/repo/compare/develop",
@@ -1078,7 +1072,7 @@ describe("generatePrompt", () => {
 
     // Should contain new branch instructions
     expect(prompt).toContain(
-      "You are already on the correct branch (claude/pr-999-20240101-1400)",
+      "The action has already checked out the working branch (claude/pr-999-20240101-1400)",
     );
     expect(prompt).toContain("Create a PR](https://github.com/");
     expect(prompt).toContain("reference the original PR in the body");
@@ -1106,7 +1100,7 @@ describe("generatePrompt", () => {
 
     // Should contain new branch instructions
     expect(prompt).toContain(
-      "You are already on the correct branch (claude/pr-555-20240101-1500)",
+      "The action has already checked out the working branch (claude/pr-555-20240101-1500)",
     );
     expect(prompt).toContain("Create a PR](https://github.com/");
     expect(prompt).toContain("reference the original PR in the body");
@@ -1129,7 +1123,7 @@ describe("generatePrompt", () => {
     const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
 
     // Should have git command instructions
-    expect(prompt).toContain("Use git commands via the Bash tool");
+    expect(prompt).toContain("Stage with git add");
     expect(prompt).toContain("git add");
     expect(prompt).toContain("git commit");
     expect(prompt).toContain("scripts/git-push.sh origin");
@@ -1172,7 +1166,7 @@ describe("generatePrompt", () => {
     expect(prompt).toContain("mcp__github_comment__update_comment");
 
     // Should not have git command instructions
-    expect(prompt).not.toContain("Use git commands via the Bash tool");
+    expect(prompt).not.toContain("Stage with git add");
 
     // Bash is off unless the workflow allows it through the allowed_tools
     // input; claude_args was removed and must not appear as live guidance.
@@ -1228,6 +1222,121 @@ describe("generatePrompt", () => {
       "app",
     );
     expect(prompt).toContain("cannot change files under .github/workflows/");
+  });
+
+  test("lays out the default prompt as flat lists with one branch rule", () => {
+    const events: PreparedContext["eventData"][] = [
+      {
+        eventName: "issue_comment",
+        commentId: "67890",
+        isPR: false,
+        issueNumber: "789",
+        commentBody: "@pi fix it",
+        baseBranch: "main",
+        agentBranch: "pi/issue-789",
+      },
+      {
+        eventName: "issue_comment",
+        commentId: "67890",
+        isPR: true,
+        prNumber: "456",
+        commentBody: "@pi fix it",
+        baseBranch: "main",
+      },
+      {
+        eventName: "pull_request_review_comment",
+        isPR: true,
+        prNumber: "456",
+        commentBody: "@pi fix it",
+        baseBranch: "main",
+        agentBranch: "pi/pr-456",
+      },
+      { eventName: "pull_request", isPR: true, prNumber: "456" },
+    ];
+
+    for (const eventData of events) {
+      for (const signing of [false, true]) {
+        for (const knownUser of [false, true]) {
+          for (const workflowPrompt of [undefined, "Review this."]) {
+            const prompt = generatePrompt(
+              {
+                repository: "owner/repo",
+                trackingCommentId: "12345",
+                triggerPhrase: "@pi",
+                ...(knownUser && { triggerUsername: "johndoe" }),
+                ...(workflowPrompt && {
+                  githubContext: createMockContext({
+                    inputs: { prompt: workflowPrompt },
+                  }),
+                }),
+                eventData,
+              },
+              { ...mockGitHubData, triggerDisplayName: undefined },
+              signing,
+              "tag",
+            );
+            const label = `${eventData.eventName} pr=${eventData.isPR} signing=${signing} user=${knownUser}`;
+
+            expect(prompt, label).not.toContain("\n\n\n");
+            // List items sit at the left margin; only an item's own
+            // continuation lines are indented, by two spaces.
+            expect(prompt, label).not.toMatch(/^ {3,}\S/m);
+            expect(prompt, label).not.toMatch(/^-\s*$/m);
+            expect(
+              prompt.split("Do not create or switch branches").length - 1,
+              label,
+            ).toBe(1);
+            expect(prompt, label).not.toContain('Use: ""');
+            if (knownUser) {
+              expect(prompt, label).toContain(
+                "End each commit message with this trailer: Co-authored-by: johndoe <johndoe@users.noreply.github.com>",
+              );
+            } else {
+              expect(prompt, label).not.toContain("Co-authored-by");
+            }
+          }
+        }
+      }
+    }
+  });
+
+  test("names the push command and target the run permits", () => {
+    const pushFor = (eventData: PreparedContext["eventData"]) =>
+      generatePrompt(
+        {
+          repository: "owner/repo",
+          trackingCommentId: "12345",
+          triggerPhrase: "@pi",
+          eventData,
+        },
+        mockGitHubData,
+        false,
+        "tag",
+      );
+
+    expect(
+      pushFor({
+        eventName: "issue_comment",
+        commentId: "67890",
+        isPR: true,
+        prNumber: "456",
+        commentBody: "@pi fix it",
+        baseBranch: "main",
+      }),
+    ).toContain(
+      "scripts/git-push.sh origin HEAD`; this run permits pushing only through that script",
+    );
+    expect(
+      pushFor({
+        eventName: "issue_comment",
+        commentId: "67890",
+        isPR: false,
+        issueNumber: "789",
+        commentBody: "@pi fix it",
+        baseBranch: "main",
+        agentBranch: "pi/issue-789",
+      }),
+    ).toContain("scripts/git-push.sh origin pi/issue-789`");
   });
 
   test("respects tool permissions even when commit signing is off", async () => {
@@ -1292,6 +1401,9 @@ describe("generatePrompt", () => {
 
         // Simplified prompt, not the default
         expect(prompt).toContain("You were tagged on a GitHub pull request");
+        // Keeps its own commit instructions, not the default prompt's list.
+        expect(prompt).toContain("Stage files: Bash(git add <files>)");
+        expect(prompt).not.toContain("Stage with git add");
         expect(prompt).not.toContain("You are an AI coding agent");
 
         // 1. Scoping clarification (neutral, no untrusted/secrets language)
