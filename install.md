@@ -8,6 +8,7 @@ Reference you will fetch along the way (raw files of `lw396/pi-agent-action` on 
 
 - `https://raw.githubusercontent.com/lw396/pi-agent-action/main/examples/pi.yml`: the workflow template
 - `https://raw.githubusercontent.com/lw396/pi-agent-action/main/README.md`: the provider table, and the migration tables under "Migrating from claude-code-action"
+- `https://raw.githubusercontent.com/lw396/pi-agent-action/main/docs/development/upstream-divergence.md`: every behaviour that differs from claude-code-action (in Chinese); entries marked 用户可见 = 是 are the ones a workflow can notice
 - `https://raw.githubusercontent.com/lw396/pi-agent-action/main/docs/setup.md`: authentication options and the custom GitHub App guide
 
 ## 1. Check the environment
@@ -84,7 +85,7 @@ Done when: `gh secret list` shows every secret the workflow will reference.
 - authentication from step 3: keep `id-token: write` for option 1; for option 2 remove it and add `github_token`; for option 3 add the `actions/create-github-app-token` step from `docs/setup.md`
 - `allowed_tools`: only the commands the agent needs to build and test this project, each as its own rule, for example `Bash(bun install),Bash(bun test:*)`. Read the project's `package.json`, `Makefile` or equivalent to find them, and propose the list to the user. A plain `Bash` or a `*` allows every command, so suggest one only if the user asks and point them to `docs/security.md` first.
 
-**Migration**: rewrite each workflow from step 2 using the README tables "Removed inputs", "Flags from `claude_args`" and "Changed behaviour": point `uses:` at `lw396/pi-agent-action@v1`, set `model`, the credentials and the authentication from step 3, move `claude_args` flags to their inputs, and carry the existing permission rules into `allowed_tools`. Ask whether to keep `@claude` as the trigger phrase (`trigger_phrase`, `label_trigger`, `branch_prefix`) or switch to the `@pi` defaults. List every row of "Changed behaviour" that applies to these workflows so the user sees what changes for them.
+**Migration**: rewrite each workflow from step 2 using the README tables "Removed inputs" and "Flags from `claude_args`": point `uses:` at `lw396/pi-agent-action@v1`, set `model`, the credentials and the authentication from step 3, move `claude_args` flags to their inputs, and carry the existing permission rules into `allowed_tools`. Ask whether to keep `@claude` as the trigger phrase (`trigger_phrase`, `label_trigger`, `branch_prefix`) or switch to the `@pi` defaults. List every user-visible entry of `upstream-divergence.md` that applies to these workflows, in the user's language, so the user sees what changes for them.
 
 Done when: the user has approved the full content of every workflow file.
 

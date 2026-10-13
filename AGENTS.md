@@ -17,11 +17,12 @@ A GitHub Action that runs the [pi coding agent](https://github.com/earendil-work
 
 ## Relationship to Upstream
 
-This project is ported from [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) ("Upstream") and is a drop-in replacement for its users. It is maintained independently: fixes are not cherry-picked from Upstream, so refactor any code here, `src/github/*` and `src/mcp/*` included, without keeping it structurally close to Upstream. Compatibility is about behaviour workflows see, not code shape.
+This project is ported from [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) ("Upstream") and offers its users a migration path. It is maintained independently: fixes are not cherry-picked from Upstream, so refactor any code here, `src/github/*` and `src/mcp/*` included, without keeping it structurally close to Upstream.
 
 - The pi executor (the Runner) lives in `src/runner/`. Upstream's `base-action/` has been removed.
 - Don't use "Claude" or Anthropic branding in new names, defaults, or user-facing text. References to Claude Code as Upstream's agent (migration notes, `CLAUDE.md` and `.claude/` paths that pi also reads) are fine.
-- Match Upstream behaviour unless one of four reasons applies: `pi-capability`, `multi-provider`, `branding`, or `scope`. Any behaviour that differs from Upstream must add or update an entry in `docs/development/upstream-divergence.md` in the same change, with its reason category.
+- Upstream behaviour is the starting point, not a constraint: change it when the change serves this project's users. A workflow written for Upstream keeps working or fails with a message naming the fix, as `src/entrypoints/removed-inputs.ts` does for removed inputs.
+- Record every behaviour that differs from Upstream in `docs/development/upstream-divergence.md` in the same change, with its reason category (`pi-capability`, `multi-provider`, `branding`, `scope`, or `improvement`).
 - Domain terms are defined in `CONTEXT.md`; architectural decisions are in `docs/development/adr/`.
 
 ## How It Runs

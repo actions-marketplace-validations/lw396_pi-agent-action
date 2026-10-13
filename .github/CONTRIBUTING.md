@@ -39,7 +39,7 @@ bun run install-hooks   # optional: format, typecheck and test before each commi
 
 ## Relationship to claude-code-action
 
-This project is ported from [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) and stays close to it, so fixes can be taken from there. Behaviour differs from it only for one of four reasons: pi works differently (`pi-capability`), multiple model providers (`multi-provider`), branding (`branding`), or a deliberate non-goal (`scope`). A change that makes behaviour differ must record the difference in [`docs/development/upstream-divergence.md`](../docs/development/upstream-divergence.md) and, if users see it, in the migration tables in the README.
+This project is ported from [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) but maintained independently: fixes are not taken from it, and its behaviour is a starting point rather than a constraint. Workflows written for it keep a migration path: they keep working, or fail with a message naming the fix. A change that makes behaviour differ from it must record the difference and its reason category in [`docs/development/upstream-divergence.md`](../docs/development/upstream-divergence.md).
 
 ## Pull requests
 

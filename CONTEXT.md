@@ -1,15 +1,15 @@
 # pi-agent-action
 
-A GitHub Action that runs the pi coding agent in response to GitHub events, as a drop-in replacement for claude-code-action.
+A GitHub Action that runs the pi coding agent in response to GitHub events, with a migration path from claude-code-action.
 
 ## Language
 
 **Upstream**:
-The anthropics/claude-code-action repository that this project is ported from, and whose behaviour towards workflows it stays compatible with. The code is maintained independently of it.
+The anthropics/claude-code-action repository that this project is ported from. Its behaviour is the starting point for this project, not a constraint; workflows written for it keep a migration path. The code is maintained independently of it.
 _Avoid_: Original, Claude version
 
 **Divergence**:
-A behaviour that differs from Upstream for one of four allowed reasons and is recorded in `docs/development/upstream-divergence.md`.
+A behaviour that differs from Upstream, recorded with its reason category in `docs/development/upstream-divergence.md`.
 _Avoid_: Difference, change, deviation
 
 **Runner**:
