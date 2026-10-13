@@ -1,5 +1,5 @@
 import type { McpServers } from "./mcp-servers";
-import { parseOpenAIBaseUrl, type ModelRuntimeOptions } from "./model-runtime";
+import { readBaseUrls, type ModelRuntimeOptions } from "./model-runtime";
 import type { RunnerOptions } from "./run-pi";
 import { parseSkills, type SkillInstall } from "./skills";
 import { parsePackages } from "./packages";
@@ -9,7 +9,7 @@ import { parseToolRules, type ToolRule } from "./tool-rules";
  * The action inputs the Runner uses, read once from the env vars that
  * action.yml sets from them. Nothing else reads these variables.
  */
-export type RunnerInputs = ModelRuntimeOptions & {
+export type RunnerInputs = Required<ModelRuntimeOptions> & {
   model?: string;
   apiKey?: string;
   piArgs?: string;
@@ -60,7 +60,7 @@ export function readRunnerInputs(env: NodeJS.ProcessEnv): RunnerInputs {
   return {
     model: env.MODEL,
     apiKey: env.API_KEY,
-    openaiBaseUrl: parseOpenAIBaseUrl(env.OPENAI_BASE_URL),
+    baseUrls: readBaseUrls(env),
     piArgs: env.PI_ARGS,
     allowedTools: parseToolRules(env.INPUT_ALLOWED_TOOLS, "allowed_tools"),
     disallowedTools: parseToolRules(
@@ -88,7 +88,7 @@ export function runnerOptions(
     userRequest: mode.userRequest,
     model: inputs.model,
     apiKey: inputs.apiKey,
-    openaiBaseUrl: inputs.openaiBaseUrl,
+    baseUrls: inputs.baseUrls,
     piArgs: inputs.piArgs,
     packages: inputs.packages,
     // The mode's own rules come first, then the workflow's allowed_tools.

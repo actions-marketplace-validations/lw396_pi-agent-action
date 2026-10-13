@@ -251,9 +251,9 @@ env:
   OPENAI_API_KEY: "sk-..." # Exposed and vulnerable!
 ```
 
-### Custom OpenAI endpoints
+### Custom model endpoints
 
-`OPENAI_BASE_URL` sends the OpenAI provider's requests, prompts, tool definitions and API key to the configured endpoint. Set it only in trusted workflow configuration; never derive it from an issue, pull request or model output. Use HTTPS for remote endpoints, keep the endpoint's API key in GitHub Secrets, and restrict any management interface separately. Embedded URL credentials, query strings and fragments are rejected; pass credentials through `OPENAI_API_KEY` or `api_key` instead.
+`OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL` send that provider's requests, prompts, tool definitions and API key to the configured endpoint. Set them only in trusted workflow configuration; never derive it from an issue, pull request or model output. Use HTTPS for remote endpoints, keep the endpoint's API key in GitHub Secrets, and restrict any management interface separately. Embedded URL credentials, query strings and fragments are rejected; pass credentials through the provider's key variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`) or `api_key` instead. Never point `ANTHROPIC_BASE_URL` at a third party while the workflow supplies a Claude subscription OAuth token.
 
 If a gateway uses OAuth for upstream access, keep its access and refresh tokens on the gateway host with persistent storage. Give the action only the gateway's API key. Keep the exact endpoint host on the egress allowlist and retain tool permissions and subprocess isolation; the endpoint override does not provide any additional sandboxing.
 

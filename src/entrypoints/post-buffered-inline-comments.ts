@@ -163,7 +163,7 @@ async function main() {
           model: runnerInputs.model,
           classifyModel: process.env.CLASSIFY_MODEL,
           apiKey: runnerInputs.apiKey,
-          openaiBaseUrl: runnerInputs.openaiBaseUrl,
+          baseUrls: runnerInputs.baseUrls,
         });
       } catch (error) {
         // Invalid runner configuration must not prevent the always() step

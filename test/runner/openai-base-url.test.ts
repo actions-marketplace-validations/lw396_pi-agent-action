@@ -151,7 +151,9 @@ describe("OPENAI_BASE_URL", () => {
 
   test("overrides only openai, preserving every built-in model and capability", async () => {
     const original = await createModelRuntime();
-    const runtime = await createModelRuntime({ openaiBaseUrl: BASE_URL });
+    const runtime = await createModelRuntime({
+      baseUrls: { openai: BASE_URL },
+    });
     const before = original.getAllModels("openai");
     const after = runtime.getAllModels("openai");
     expect(after).toEqual(
@@ -168,7 +170,7 @@ describe("OPENAI_BASE_URL", () => {
 
   test("rejects invalid runtime configuration before making any request", async () => {
     await expect(
-      createModelRuntime({ openaiBaseUrl: "file:///tmp/model" }),
+      createModelRuntime({ baseUrls: { openai: "file:///tmp/model" } }),
     ).rejects.toThrow("OPENAI_BASE_URL");
     expect(requests).toHaveLength(0);
   });
@@ -230,7 +232,9 @@ describe("OPENAI_BASE_URL", () => {
 
   test("compaction resolves its summarization model through the same proxy", async () => {
     const { root, cwd } = getScratch();
-    const runtime = await createModelRuntime({ openaiBaseUrl: BASE_URL });
+    const runtime = await createModelRuntime({
+      baseUrls: { openai: BASE_URL },
+    });
     await runtime.setRuntimeApiKey("openai", KEY);
     const settingsManager = SettingsManager.inMemory({
       compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 1024 },
@@ -297,7 +301,7 @@ describe("OPENAI_BASE_URL", () => {
       runPi("Say hello.", {
         model: MODEL,
         apiKey: KEY,
-        openaiBaseUrl: BASE_URL,
+        baseUrls: { openai: BASE_URL },
         cwd: getScratch().cwd,
       }),
     ).rejects.toThrow("Proxy rejected request");
@@ -310,7 +314,7 @@ describe("OPENAI_BASE_URL", () => {
     const result = await classifyComments(["Fix this loop.", "Test comment"], {
       model: MODEL,
       apiKey: KEY,
-      openaiBaseUrl: BASE_URL,
+      baseUrls: { openai: BASE_URL },
     });
     expect(result).toEqual([true, false]);
     expect(requests).toHaveLength(1);
@@ -326,7 +330,7 @@ describe("OPENAI_BASE_URL", () => {
       model: "anthropic/claude-sonnet-4",
       apiKey: "main-provider-only-key",
       classifyModel: MODEL,
-      openaiBaseUrl: BASE_URL,
+      baseUrls: { openai: BASE_URL },
     });
     expect(result).toEqual([true]);
     expect(requests).toHaveLength(1);
@@ -352,7 +356,7 @@ describe("OPENAI_BASE_URL", () => {
       await classifyComments(["Fix this loop."], {
         model: MODEL,
         apiKey: KEY,
-        openaiBaseUrl: BASE_URL,
+        baseUrls: { openai: BASE_URL },
       }),
     ).toBeNull();
     expect(requests).toHaveLength(1);

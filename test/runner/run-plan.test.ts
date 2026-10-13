@@ -31,7 +31,7 @@ describe("readRunnerInputs", () => {
     expect(inputs).toEqual({
       model: "openai/gpt-5",
       apiKey: "key",
-      openaiBaseUrl: "https://proxy.example.com/prefix/v1",
+      baseUrls: { openai: "https://proxy.example.com/prefix/v1" },
       piArgs: "--thinking high",
       allowedTools: [
         { text: "Bash(npm test)", tool: "bash", pattern: "npm test" },
@@ -51,15 +51,15 @@ describe("readRunnerInputs", () => {
     "ignores an empty OPENAI_BASE_URL: %p",
     (value) => {
       expect(
-        readRunnerInputs({ OPENAI_BASE_URL: value }).openaiBaseUrl,
+        readRunnerInputs({ OPENAI_BASE_URL: value }).baseUrls.openai,
       ).toBeUndefined();
     },
   );
 
   test("accepts a local HTTP proxy", () => {
     expect(
-      readRunnerInputs({ OPENAI_BASE_URL: "http://127.0.0.1:8317/v1" })
-        .openaiBaseUrl,
+      readRunnerInputs({ OPENAI_BASE_URL: "http://127.0.0.1:8317/v1" }).baseUrls
+        .openai,
     ).toBe("http://127.0.0.1:8317/v1");
   });
 
@@ -81,6 +81,26 @@ describe("readRunnerInputs", () => {
       expect(message).toContain("OPENAI_BASE_URL");
       expect(message).not.toContain(value);
       expect(message).not.toContain("secret-password");
+    }
+  });
+
+  test("reads ANTHROPIC_BASE_URL for the anthropic provider alone", () => {
+    expect(
+      readRunnerInputs({
+        ANTHROPIC_BASE_URL: " https://gateway.example.com/anthropic/ ",
+      }).baseUrls,
+    ).toEqual({ anthropic: "https://gateway.example.com/anthropic" });
+  });
+
+  test("rejects an invalid ANTHROPIC_BASE_URL without echoing it", () => {
+    const value = "https://gateway.example.com?key=secret-password";
+    expect(() => readRunnerInputs({ ANTHROPIC_BASE_URL: value })).toThrow(
+      /^ANTHROPIC_BASE_URL must be/,
+    );
+    try {
+      readRunnerInputs({ ANTHROPIC_BASE_URL: value });
+    } catch (error) {
+      expect((error as Error).message).not.toContain("secret-password");
     }
   });
 
@@ -211,7 +231,7 @@ describe("runnerOptions", () => {
 
     expect(options).toMatchObject({
       model: "openai/gpt-5",
-      openaiBaseUrl: "https://proxy.example.com/v1",
+      baseUrls: { openai: "https://proxy.example.com/v1" },
       isolateBash: true,
       showFullOutput: true,
     });

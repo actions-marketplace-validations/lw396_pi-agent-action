@@ -52,6 +52,27 @@ Use an API key accepted by your endpoint. The `api_key` input can supply that ke
 
 `OPENAI_BASE_URL` is an action-supported environment override, not a new action input or pi CLI flag. The action continues to ignore `models.json`; no additional provider extension is required. Treat catalog cost figures as estimates, not the custom service's actual bill.
 
+## Custom Anthropic endpoints
+
+Set `ANTHROPIC_BASE_URL` in the action step's `env:` to route the `anthropic` provider through a trusted endpoint implementing the Anthropic Messages API, such as a company gateway, LiteLLM or another proxy. Claude Code reads the same variable, so a workflow migrated from claude-code-action keeps its gateway.
+
+```yaml
+with:
+  model: anthropic/<model-id>
+env:
+  ANTHROPIC_BASE_URL: https://gateway.example.com
+  # The gateway's key, sent as x-api-key...
+  ANTHROPIC_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+  # ...or a token sent as Authorization: Bearer
+  # ANTHROPIC_AUTH_TOKEN: ${{ secrets.GATEWAY_TOKEN }}
+```
+
+- Supply the base URL **without** `/v1`: the Anthropic transport sends requests to `<base-url>/v1/messages`, so `https://gateway.example.com/v1` would call `/v1/v1/messages`. This is the opposite of `OPENAI_BASE_URL`.
+- The `api_key` input can supply the key instead of `ANTHROPIC_API_KEY`. Use a key your gateway issues: do not send a Claude subscription OAuth token (`sk-ant-oat...`) to a third-party endpoint.
+- The model ID must be in pi's pinned `anthropic` catalog, e.g. `claude-sonnet-4-5`, and the gateway must accept it. Services that offer an Anthropic-compatible API under their own model IDs cannot be selected this way. The gateway must support streaming, tool use and the `anthropic-beta` headers pi sends.
+- The override applies to every `anthropic` model operation, including compaction and inline comment classification. Amazon Bedrock, Google Vertex and other providers are unchanged.
+- URL validation, the absence of an official-endpoint fallback, and the network allowlist work as for [`OPENAI_BASE_URL`](#custom-openai-endpoints).
+
 ## Letting the agent run commands
 
 The agent can always read files. Everything else needs a rule in `allowed_tools`. List each command the job runs by its prefix:
