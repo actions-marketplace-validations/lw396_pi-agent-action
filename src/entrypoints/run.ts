@@ -157,6 +157,9 @@ async function run() {
       context,
       octokit,
       githubToken,
+      githubTokenSource: process.env.OVERRIDE_GITHUB_TOKEN
+        ? ("input" as const)
+        : ("app" as const),
       allowedTools: runnerInputs.allowedTools,
       untrustedInput: runnerInputs.untrustedInput,
     };

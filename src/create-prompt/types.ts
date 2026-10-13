@@ -1,4 +1,5 @@
 import type { GitHubContext } from "../github/context";
+import type { GitHubTokenSource } from "../github/token";
 
 export type CommonFields = {
   repository: string;
@@ -111,4 +112,6 @@ export type EventData =
 export type PreparedContext = CommonFields & {
   eventData: EventData;
   githubContext?: GitHubContext;
+  /** Unset when unknown; the prompt then assumes nothing about the token. */
+  githubTokenSource?: GitHubTokenSource;
 };

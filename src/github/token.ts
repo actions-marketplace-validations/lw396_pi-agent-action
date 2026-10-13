@@ -155,6 +155,12 @@ async function exchangeForAppToken(
   return appToken;
 }
 
+/**
+ * Where the GitHub token came from: the pi-agent-action app (OIDC exchange),
+ * or the github_token input.
+ */
+export type GitHubTokenSource = "app" | "input";
+
 export async function setupGitHubToken(): Promise<string> {
   // Check if GitHub token was provided as override
   const providedToken = process.env.OVERRIDE_GITHUB_TOKEN;

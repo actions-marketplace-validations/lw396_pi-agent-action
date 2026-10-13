@@ -24,6 +24,7 @@ export async function prepareTagMode({
   context,
   octokit,
   githubToken,
+  githubTokenSource,
   allowedTools: workflowAllowedTools,
   untrustedInput,
 }: PrepareOptions): Promise<PrepareResult> {
@@ -78,6 +79,7 @@ export async function prepareTagMode({
     branchInfo.agentBranch,
     githubData,
     context,
+    githubTokenSource,
   );
 
   const gitPushWrapper = `${process.env.GITHUB_ACTION_PATH}/scripts/git-push.sh`;

@@ -2,12 +2,13 @@
 
 import { describe, test, expect, beforeAll } from "bun:test";
 import {
+  createPrompt,
   generatePrompt,
   getEventTypeAndContext,
   prepareContext,
 } from "../src/create-prompt";
 import type { PreparedContext } from "../src/create-prompt";
-import { createMockContext } from "./mockContext";
+import { createMockContext, mockIssueCommentContext } from "./mockContext";
 
 beforeAll(() => {
   process.env.GITHUB_ACTION_PATH = "/test/action/path";
@@ -193,22 +194,39 @@ describe("generatePrompt", () => {
         expect(prompt).toContain(
           "complete every requested requirement and acceptance criterion",
         );
+        // Name each early stop that would end an unattended run.
         expect(prompt).toContain(
-          "Existing tests passing does not prove that new requirements are implemented",
+          "the run ends at the first message you send without a tool call",
         );
-        expect(prompt).toContain("Try permitted alternatives before stopping");
+        for (const stop of [
+          "a summary that announces a next step without taking it",
+          "an offer to continue",
+          "a list of decisions that do not block the remaining work",
+          "a report because a milestone is done",
+        ]) {
+          expect(prompt).toContain(stop);
+        }
         expect(prompt).toContain(
-          "Complexity, the amount of work, or unavailable optional review tooling is not a blocker",
+          "finish the parts that do not depend on the answer, then end with the question",
         );
         expect(prompt).toContain(
-          "Never mark unimplemented or unverified tasks as completed",
+          "Existing tests passing does not show that new requirements work",
         );
         expect(prompt).toContain(
-          "leave unfinished checklist items unchecked and report the blocker",
+          "the allowed_tools rule that would permit it, such as Bash(npm test:*)",
         );
         expect(prompt).toContain(
-          "do not discard it merely to make a partial result pass existing tests",
+          "do not reach the same effect through another command or tool",
         );
+        expect(prompt).toContain("Do not delete or weaken tests");
+        expect(prompt).toContain(
+          "Complexity and the amount of work are not blockers",
+        );
+        expect(prompt).toContain("Check an item only when it is implemented");
+        expect(prompt).toContain("leave its items unchecked");
+        // The model verifies on its own; stacked verification demands make it over-verify.
+        expect(prompt).not.toContain("Verify each acceptance criterion");
+        expect(prompt).not.toContain("implemented, verified, and published");
         expect(prompt).not.toContain("Or explain why it's too complex");
         expect(prompt).not.toContain("simple to moderate complexity");
         expect(prompt).toContain(
@@ -255,13 +273,15 @@ describe("generatePrompt", () => {
       expect(prompt).toContain("git diff origin/release/next...HEAD");
       expect(prompt).toContain("allowed_tools and disallowed_tools");
       expect(prompt).toContain("Do not bypass permission or safety checks");
-      expect(prompt).toContain(
-        "The user is not available for a live conversation",
-      );
-      expect(prompt).toContain("complete the remaining independent work");
+      expect(prompt).toContain("Nobody replies during this run");
+      expect(prompt).toContain("finish the rest first");
       expect(prompt).toContain("Do not add unrelated features or cleanup");
       expect(prompt).toContain(
-        "do not repeat or broaden them without new evidence",
+        "repeat or broaden them only for new changes, failures, or unresolved concerns",
+      );
+      expect(prompt).toContain("name the file and quote the instruction");
+      expect(prompt).toContain(
+        "In the final comment, lead with the outcome, then anything the user must provide or decide",
       );
       expect(prompt).toContain("Update at meaningful milestones");
       expect(prompt).toContain("normal replies and tool output are not posted");
@@ -1160,6 +1180,54 @@ describe("generatePrompt", () => {
       "available tools and the allowed_tools and disallowed_tools rules",
     );
     expect(prompt).not.toContain("claude_args");
+  });
+
+  test("tells the model what the token can push under .github/workflows/", () => {
+    const appOnly = "cannot change files under .github/workflows/";
+    const otherToken = "which this run may not have";
+    for (const signing of [false, true]) {
+      for (const githubTokenSource of ["app", "input", undefined] as const) {
+        const prompt = generatePrompt(
+          {
+            repository: "owner/repo",
+            trackingCommentId: "12345",
+            triggerPhrase: "@pi",
+            githubTokenSource,
+            eventData: {
+              eventName: "issue_comment",
+              commentId: "67890",
+              isPR: false,
+              issueNumber: "789",
+              commentBody: "@pi update the CI workflow",
+              baseBranch: "main",
+              agentBranch: "pi/issue-789",
+            },
+          },
+          mockGitHubData,
+          signing,
+          "tag",
+        );
+        if (githubTokenSource === "app") {
+          expect(prompt).toContain(appOnly);
+          expect(prompt).not.toContain(otherToken);
+        } else {
+          expect(prompt).toContain(otherToken);
+          expect(prompt).not.toContain(appOnly);
+        }
+      }
+    }
+  });
+
+  test("createPrompt passes the token source to the prompt", () => {
+    const { prompt } = createPrompt(
+      42,
+      "main",
+      "pi/issue-55",
+      mockGitHubData,
+      mockIssueCommentContext,
+      "app",
+    );
+    expect(prompt).toContain("cannot change files under .github/workflows/");
   });
 
   test("respects tool permissions even when commit signing is off", async () => {
