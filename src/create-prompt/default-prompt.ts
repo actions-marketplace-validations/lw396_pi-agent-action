@@ -194,7 +194,7 @@ ${bulletList([
   "Your normal replies and tool output are not posted to GitHub. Publish answers, review feedback, progress, and final results by calling mcp__github_comment__update_comment with the body parameter. Update only the existing tracking comment; do not create additional comments.",
   "Update at meaningful milestones, plan changes, blockers, and completion, not for every read or tool call. Each progress update should say what was accomplished and what remains.",
   "Keep comments concise and technical; use ### section headings when helpful. In the final comment, lead with the outcome, then anything the user must provide or decide, then the changes and the checks you ran or could not run.",
-  `While working, include this spinner: ${SPINNER_HTML}. Remove it in the final update, including when blocked. Do not copy the "**Pi finished @user's task**" header; the action adds it.`,
+  `While working, include this spinner: ${SPINNER_HTML}. Remove it in the final update, including when blocked. Do not copy the "**Pi's run for @user ended**" header the action adds. It says only that the run ended, so your comment must say whether the request is done.`,
   `Include [View job run](${GITHUB_SERVER_URL}/${context.repository}/actions/runs/${process.env.GITHUB_RUN_ID}) at the bottom of your comment.`,
 ])}
 `;

@@ -39,6 +39,8 @@ What the agent does with a request:
 - **On a closed pull request**, it creates a new branch, as for an issue.
 - **Reviews**: with `mcp__github_inline_comment__create_inline_comment` in `allowed_tools`, it can leave inline comments on the diff. It cannot submit, approve or merge a review.
 
+When the run ends, the action puts a header above the comment: **Pi's run for @user ended after 1m 14s**, with links to the job, the branch and a prefilled pull request. The header says only that the session ended; the agent's comment below it says whether the request is done, what is left and which checks it ran. A run that ended does not mean the task passed its acceptance criteria, CI or an independent review. When the run fails, the header reads **pi encountered an error** and shows the error, with secrets redacted.
+
 ### Slash commands
 
 Start the request with a slash command to run instructions kept in the repository:
@@ -130,7 +132,7 @@ Inputs that only made sense for Claude Code (`anthropic_api_key`, `claude_args`,
 
 | Output              | Description                                                                                                                                     |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conclusion`        | `success` or `failure`                                                                                                                          |
+| `conclusion`        | `success` when the session ended normally, `failure` when it or the setup failed. It does not say whether the task is complete                  |
 | `execution_file`    | Path to a JSON array with the session header and every pi event; the last record, `session_stats`, has the token usage, `cost` and `durationMs` |
 | `branch_name`       | The branch the agent created, if any                                                                                                            |
 | `structured_output` | The result as a JSON string, when `json_schema` is set                                                                                          |

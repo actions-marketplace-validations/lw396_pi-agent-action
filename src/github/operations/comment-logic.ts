@@ -126,9 +126,12 @@ export function updateCommentBody(input: CommentUpdateInput): string {
     const username =
       triggerUsername || (usernameMatch ? usernameMatch[1] : "user");
 
-    header = `**Pi finished @${username}'s task`;
+    // The Runner only knows that the session ended normally, not whether the
+    // request, its acceptance criteria or an independent review passed: the
+    // header must not claim more. The body reports the task's outcome.
+    header = `**Pi's run for @${username} ended`;
     if (durationStr) {
-      header += ` in ${durationStr}`;
+      header += ` after ${durationStr}`;
     }
     header += "**";
   }

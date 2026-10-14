@@ -238,6 +238,33 @@ describe("generatePrompt", () => {
     }
   });
 
+  test("names the run-ended header the action adds and leaves the task's status to the comment", () => {
+    const prompt = generatePrompt(
+      {
+        repository: "owner/repo",
+        trackingCommentId: "12345",
+        triggerPhrase: "@pi",
+        eventData: {
+          eventName: "issue_comment",
+          commentId: "67890",
+          isPR: false,
+          issueNumber: "789",
+          commentBody: "@pi complete this issue",
+          baseBranch: "main",
+          agentBranch: "pi/issue-789",
+        },
+      },
+      mockGitHubData,
+      false,
+      "tag",
+    );
+
+    expect(prompt).toContain(
+      `Do not copy the "**Pi's run for @user ended**" header the action adds. It says only that the run ended, so your comment must say whether the request is done.`,
+    );
+    expect(prompt).not.toContain("finished");
+  });
+
   test("uses concise environment and completion contracts instead of a prescribed reasoning workflow", () => {
     const context: PreparedContext = {
       repository: "owner/repo",
