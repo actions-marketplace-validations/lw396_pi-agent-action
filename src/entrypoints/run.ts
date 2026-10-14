@@ -31,8 +31,8 @@ import { updateCommentLink } from "./update-comment-link";
 import { writeJobSummary } from "./job-summary";
 import { redactSecrets } from "../github/utils/sanitizer";
 import { collectSecretValues } from "../runner/secret-values";
-import { runPi } from "../runner/run-pi";
-import { RunnerFailure, type RunAudit } from "../runner/run-audit";
+import { runPi, RunnerFailure } from "../runner/run-pi";
+import type { RunAudit } from "../runner/run-audit";
 import { readRunnerInputs, runnerOptions } from "../runner/run-plan";
 import { installSkills } from "../runner/skills";
 import { setExecutionFileOutputIfPresent } from "../runner/execution-file";
@@ -237,8 +237,9 @@ async function run() {
       }
     }
 
-    // The run summary is always written once the Runner started; the
-    // detailed report too, unless display_report is set to false.
+    // The run summary is always written once the Runner started. The
+    // detailed report follows unless display_report is "false", its default
+    // in action.yml.
     if (runnerStarted || executionFile) {
       await writeJobSummary({
         summaryFile: process.env.GITHUB_STEP_SUMMARY,

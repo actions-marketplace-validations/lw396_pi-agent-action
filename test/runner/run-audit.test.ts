@@ -2,8 +2,7 @@
 // the Runner's own session events, never from what the model writes.
 import { describe, expect, test } from "bun:test";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import { RunnerFailure } from "../../src/runner/run-audit";
-import { runPi } from "../../src/runner/run-pi";
+import { runPi, RunnerFailure } from "../../src/runner/run-pi";
 import { fauxRuntime, readExecutionFile, rules, useScratch } from "./harness";
 
 describe("the run audit runPi() reports", () => {
@@ -105,6 +104,22 @@ describe("the run audit runPi() reports", () => {
     expect((failure as RunnerFailure).audit.termination).toBe(
       "structured_output_missing",
     );
+  });
+
+  test("leaves the cost unavailable for a model without catalog prices", async () => {
+    const { modelRuntime, model } = await fauxRuntime(
+      [fauxAssistantMessage("Done.")],
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    );
+
+    const result = await runPi("Do it.", {
+      model,
+      cwd: getScratch().cwd,
+      modelRuntime,
+    });
+
+    expect(result.audit.costUsd).toBeUndefined();
+    expect(result.audit.usage?.total).toBeGreaterThan(0);
   });
 
   test("holds no tool arguments, results or model text", async () => {

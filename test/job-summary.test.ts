@@ -181,6 +181,43 @@ describe("writeJobSummary", () => {
     expect(written).not.toContain("MODEL TEXT");
   });
 
+  test("reads nothing from the Execution file, unknown extension events included", async () => {
+    await writeFile(
+      executionFile,
+      JSON.stringify([
+        {
+          type: "my_extension_event",
+          url: "https://evil.example/x",
+          token: "tok-9f2",
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: "t1",
+          toolName: "bash",
+          result: { content: [{ type: "text", text: "FILE BODY" }] },
+          isError: false,
+        },
+      ]),
+    );
+
+    await writeJobSummary({
+      summaryFile,
+      audit,
+      executionFile,
+      displayReport: false,
+    });
+
+    const written = await summary();
+    for (const leak of [
+      "my_extension_event",
+      "evil.example",
+      "tok-9f2",
+      "FILE BODY",
+    ]) {
+      expect(written).not.toContain(leak);
+    }
+  });
+
   test("puts the detailed report after the safe summary with display_report", async () => {
     await writeJobSummary({
       summaryFile,

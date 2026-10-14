@@ -1,4 +1,7 @@
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentSessionEvent,
+  SessionStats,
+} from "@earendil-works/pi-coding-agent";
 
 /**
  * How the pi session ended. It describes the session, not the task: a
@@ -18,13 +21,16 @@ export type Termination =
   /** prompt() threw: the Runner failed while the session was running. */
   | "runner_error";
 
-/** Token counts in pi's categories; input does not include cached tokens. */
+/**
+ * Token counts in pi's categories, as pi's session stats total them over the
+ * responses; input does not include cached tokens.
+ */
 export type RunUsage = {
   input?: number;
   output?: number;
   cacheRead?: number;
   cacheWrite?: number;
-  /** The sum of the four, known only when all four are. */
+  /** The sum of the four. */
   total?: number;
 };
 
@@ -45,22 +51,21 @@ export type RunAudit = {
   /** Calls the allowed_tools and disallowed_tools rules blocked. */
   permissionDenials?: number;
   usage?: RunUsage;
-  /** In US dollars, as pi prices the usage from its model catalog. */
+  /**
+   * In US dollars, as pi prices the usage from its model catalog. Unset for a
+   * model the catalog has no prices for, rather than a cost of 0.
+   */
   costUsd?: number;
 };
 
-/** A Runner session that failed, with the audit of what it did. */
-export class RunnerFailure extends Error {
-  constructor(
-    message: string,
-    readonly audit: RunAudit,
-  ) {
-    super(message);
-    this.name = "RunnerFailure";
-  }
-}
-
-const USAGE_KEYS = ["input", "output", "cacheRead", "cacheWrite"] as const;
+/** What the session reports at its end, besides its events. */
+export type SessionEnd = {
+  termination: Termination;
+  durationMs: number;
+  stats: Pick<SessionStats, "tokens" | "cost">;
+  /** The model has prices in pi's catalog. */
+  priced: boolean;
+};
 
 /**
  * Collects the audit from a session's events and the tool permission
@@ -92,56 +97,27 @@ export function createAuditCollector() {
       denied.add(toolCallId);
     },
 
-    audit(termination: Termination, durationMs: number): RunAudit {
-      const messages = [...responses];
+    audit({ termination, durationMs, stats, priced }: SessionEnd): RunAudit {
       const failures = [...failed].filter((id) => !denied.has(id));
+      const { tokens } = stats;
       return {
         termination,
         durationMs,
-        modelResponses: messages.length,
+        modelResponses: responses.size,
         toolAttempts: attempted.size,
         toolFailures: failures.length,
         permissionDenials: denied.size,
-        usage: usageOf(messages),
-        costUsd: sumOf(messages, (usage) =>
-          isObject(usage.cost) ? usage.cost.total : undefined,
-        ),
+        usage: {
+          input: tokens.input,
+          output: tokens.output,
+          cacheRead: tokens.cacheRead,
+          cacheWrite: tokens.cacheWrite,
+          total: tokens.total,
+        },
+        costUsd: priced ? stats.cost : undefined,
       };
     },
   };
 }
 
 export type AuditCollector = ReturnType<typeof createAuditCollector>;
-
-function usageOf(messages: object[]): RunUsage {
-  const usage: RunUsage = {};
-  for (const key of USAGE_KEYS) {
-    usage[key] = sumOf(messages, (reported) => reported[key]);
-  }
-  const parts = USAGE_KEYS.map((key) => usage[key]);
-  if (parts.every((part) => part !== undefined)) {
-    usage.total = parts.reduce((sum, part) => sum + part, 0);
-  }
-  return usage;
-}
-
-/** The sum over the responses' usage, or undefined if one did not report it. */
-function sumOf(
-  messages: object[],
-  pick: (usage: Record<string, unknown>) => unknown,
-): number | undefined {
-  let sum = 0;
-  for (const message of messages) {
-    const usage = (message as { usage?: unknown }).usage;
-    const value = isObject(usage) ? pick(usage) : undefined;
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-      return undefined;
-    }
-    sum += value;
-  }
-  return sum;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}

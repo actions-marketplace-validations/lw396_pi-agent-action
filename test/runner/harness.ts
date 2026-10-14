@@ -66,15 +66,12 @@ export function useScratch(): () => Scratch {
 }
 
 /** A model runtime that only knows the faux provider, scripted with responses. */
-export async function fauxRuntime(responses: FauxResponseStep[]) {
+export async function fauxRuntime(
+  responses: FauxResponseStep[],
+  cost = { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+) {
   const faux = fauxProvider({
-    models: [
-      {
-        id: "faux-model",
-        reasoning: true,
-        cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
-      },
-    ],
+    models: [{ id: "faux-model", reasoning: true, cost }],
   });
   faux.setResponses(responses);
   const modelRuntime = await ModelRuntime.create({

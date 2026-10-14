@@ -112,10 +112,10 @@ Every run that reaches the agent writes a short "pi run summary" to the Job Summ
 
 - **How the session ended**: completed, stopped at the output limit, model error, aborted, no model response, no structured result (`json_schema`), or Runner error. This is how the pi session ended, not whether the task was done: the action does not judge the agent's work, and does not read the model's claims or checkboxes.
 - **How long it ran**, and **how many model responses and tool calls** it made: calls attempted, calls that ran and failed, and calls the `allowed_tools` and `disallowed_tools` rules denied. The counts come from the Runner's session events, each call counted once.
-- **Tokens**: input, output, cache read, cache write and their total, summed over the model responses as the provider reported them. Input does not include cached tokens. A provider that does not report cache usage shows 0 for it.
-- **Estimated cost**, priced from the pi SDK's model catalog. It can differ from your bill, especially with a custom endpoint (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`).
+- **Tokens**: input, output, cache read, cache write and their total, summed over the model responses as pi's session stats count them. Input does not include cached tokens. pi records cache usage a provider does not report as 0, so a 0 for cache read or write can mean either.
+- **Estimated cost**, priced from the pi SDK's model catalog. It can differ from your bill, especially with a custom endpoint (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`). For a model the catalog has no prices for, the cost is `unavailable`.
 
-A value the run could not measure shows as `unavailable`, never as 0. When the Runner stops before the session starts, for example because `model` names an unknown model, the summary says that statistics are unavailable.
+A value the run could not measure shows as `unavailable`. When the Runner stops before the session starts, for example because `model` names an unknown model, the summary says that statistics are unavailable.
 
 It does not show what the agent did: no prompt, model text or reasoning, file contents, tool arguments, commands, command output or error messages. The summary is built only from numbers and fixed labels, so it is safe to publish on a public repository without relying on redaction. For more:
 

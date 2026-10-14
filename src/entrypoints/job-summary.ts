@@ -56,8 +56,8 @@ export function formatRunAudit(audit: RunAudit | undefined): string {
   markdown +=
     "_The session status says how the pi session ended, not whether the task was done. " +
     "Tool calls attempted include calls that were denied; failed calls are those that ran and returned an error, denials not included. " +
-    "Tokens are summed over the model responses as the provider reported them: input does not include cache reads and writes, which are counted separately, and the total is the sum of the four; a provider that does not report cache usage shows 0 for it. " +
-    "The cost is an estimate from the pi SDK's model catalog prices and may differ from your provider's bill, especially with a custom endpoint. " +
+    "Tokens are summed over the model responses: input does not include cache reads and writes, which are counted separately, and the total is the sum of the four. pi counts cache usage a provider does not report as 0. " +
+    "The cost is an estimate from the pi SDK's model catalog prices and may differ from your provider's bill, especially with a custom endpoint; it is unavailable for a model the catalog has no prices for. " +
     "The Execution file (the execution_file output) holds the full record of the session._\n\n";
   return markdown;
 }
@@ -120,6 +120,9 @@ async function writeDetailedReport(
     }
   }
 }
+
+// The formatters take unknown, not RunAudit's types: they are what keeps a
+// value of any other shape out of the published summary.
 
 function terminationLabel(termination: unknown): string {
   return typeof termination === "string" &&

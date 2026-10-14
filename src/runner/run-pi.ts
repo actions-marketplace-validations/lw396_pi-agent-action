@@ -29,7 +29,6 @@ import {
 import { mcpServerExtensions, type McpServers } from "./mcp-servers";
 import {
   createAuditCollector,
-  RunnerFailure,
   type AuditCollector,
   type RunAudit,
   type Termination,
@@ -323,6 +322,7 @@ export async function runPi(
     command ? `${prompt}\n\n${command}` : prompt,
     structuredOutput,
     auditCollector,
+    hasCatalogPrices(model.model),
   );
   const totals: SessionStatsRecord = { type: "session_stats", ...stats };
   records.push(totals);
@@ -344,6 +344,33 @@ export async function runPi(
     structuredOutput: structuredOutput?.output(),
     audit,
   };
+}
+
+/**
+ * A model the catalog has no prices for (a custom endpoint's, say) costs 0 in
+ * pi's stats: the audit leaves its cost unknown instead.
+ */
+function hasCatalogPrices(model: {
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+  };
+}): boolean {
+  const { input, output, cacheRead, cacheWrite } = model.cost;
+  return [input, output, cacheRead, cacheWrite].some((price) => price > 0);
+}
+
+/** A Runner session that failed, with the audit of what it did. */
+export class RunnerFailure extends Error {
+  constructor(
+    message: string,
+    readonly audit: RunAudit,
+  ) {
+    super(message);
+    this.name = "RunnerFailure";
+  }
 }
 
 /** The allowed_tools and disallowed_tools rules, and what the run allows besides. */
@@ -433,6 +460,7 @@ async function runSession(
   prompt: string,
   structuredOutput: StructuredOutput | undefined,
   auditCollector: AuditCollector,
+  priced: boolean,
 ) {
   let failure: string | undefined;
   let termination: Termination;
@@ -441,14 +469,13 @@ async function runSession(
   try {
     await session.bindExtensions({});
     await session.prompt(prompt);
-    termination = sessionTermination(session.messages);
-    failure = sessionFailure(session.messages);
+    ({ termination, failure } = sessionEnd(session.messages));
     if (failure === undefined) {
       failure = structuredOutput?.failure();
       if (failure !== undefined) termination = "structured_output_missing";
     }
   } catch (error) {
-    failure = error instanceof Error ? error.message : String(error);
+    failure = errorMessage(error);
     termination = "runner_error";
   }
   const durationMs = Date.now() - startedAt;
@@ -458,12 +485,29 @@ async function runSession(
     contextUsage: _context,
     ...totals
   } = session.getSessionStats();
-  await closeSession(session);
+  try {
+    await closeSession(session);
+  } catch (error) {
+    // Still a failure with the session's statistics and Execution file.
+    if (failure === undefined) {
+      failure = `closing the session failed: ${errorMessage(error)}`;
+      termination = "runner_error";
+    }
+  }
   return {
     failure,
     stats: { ...totals, durationMs },
-    audit: auditCollector.audit(termination, durationMs),
+    audit: auditCollector.audit({
+      termination,
+      durationMs,
+      stats: totals,
+      priced,
+    }),
   };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -479,36 +523,32 @@ async function closeSession(session: AgentSession) {
   session.dispose();
 }
 
-/** How the session ended, from the stop reason of its last response. */
-function sessionTermination(messages: AgentSession["messages"]): Termination {
+/**
+ * How the session ended, from its last response, and why it failed, unless
+ * it succeeded. pi reports a provider error, after its own retries, as the
+ * stop reason of the final assistant message rather than by rejecting
+ * prompt(). A response cut at the output limit is not a failure.
+ */
+function sessionEnd(messages: AgentSession["messages"]): {
+  termination: Termination;
+  failure?: string;
+} {
   const last = messages.findLast((m) => m.role === "assistant");
-  if (!last) return "no_response";
+  if (!last) {
+    return { termination: "no_response", failure: "the model did not respond" };
+  }
+  const failure =
+    last.errorMessage ?? `the model stopped with ${last.stopReason}`;
   switch (last.stopReason) {
     case "error":
-      return "model_error";
+      return { termination: "model_error", failure };
     case "aborted":
-      return "aborted";
+      return { termination: "aborted", failure };
     case "length":
-      return "output_limit";
+      return { termination: "output_limit" };
     default:
-      return "completed";
+      return { termination: "completed" };
   }
-}
-
-/**
- * Why the session failed, or undefined if it succeeded. pi reports a provider
- * error, after its own retries, as the stop reason of the final assistant
- * message rather than by rejecting prompt().
- */
-function sessionFailure(
-  messages: AgentSession["messages"],
-): string | undefined {
-  const last = messages.findLast((m) => m.role === "assistant");
-  if (!last) return "the model did not respond";
-  if (last.stopReason === "error" || last.stopReason === "aborted") {
-    return last.errorMessage ?? `the model stopped with ${last.stopReason}`;
-  }
-  return undefined;
 }
 
 /**
