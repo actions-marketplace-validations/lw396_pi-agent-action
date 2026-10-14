@@ -1,11 +1,23 @@
 // Public Runner seam, with real SDK package installation and a local npm
 // registry. Only the registry and model provider are substituted.
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { runPi } from "../../src/runner/run-pi";
 import { fauxRuntime, readExecutionFile, rules, useScratch } from "./harness";
+
+// The tests run real npm and git installs. The first npm run in a CI job
+// starts cold (2s to over 5s on GitHub runners, against ~300ms after that),
+// which bun's default 5s timeout does not leave room for.
+setDefaultTimeout(30_000);
 
 const getScratch = useScratch();
 const NPM_SOURCE = "npm:pi-action-test-package@1.2.3";
