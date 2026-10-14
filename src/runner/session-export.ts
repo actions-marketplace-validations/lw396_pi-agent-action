@@ -1,5 +1,5 @@
 import * as core from "@actions/core";
-import { mkdir, rename, rm, writeFile } from "fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import {
   CURRENT_SESSION_VERSION,
@@ -20,9 +20,9 @@ import { redactNamedSecretValues } from "./secret-values";
  * written to disk: it lives in the Runner's in-memory SessionManager.
  */
 
-/** Where the files go, under the directory exportSession() is given. */
-export const SESSION_JSONL = "pi-session.jsonl";
-export const SESSION_HTML = "pi-session.html";
+/** Where the files go, under the directory writeSessionExport() is given. */
+const SESSION_JSONL = "pi-session.jsonl";
+const SESSION_HTML = "pi-session.html";
 
 /** The files an export produced. A file that failed is left out. */
 export type SessionExport = { jsonl?: string; html?: string };
@@ -32,8 +32,11 @@ const MAX_TEXT_LENGTH = 50_000;
 /** Nesting deeper than this, in tool arguments and the like, is cut. */
 const MAX_DEPTH = 32;
 
-/** customType of the placeholders for entries and messages left out. */
-export const OMITTED_TYPE = "pi-agent-action/omitted";
+/**
+ * customType of the placeholders for entries and messages left out. They
+ * are custom_message entries, the kind pi's HTML page shows.
+ */
+const OMITTED_TYPE = "pi-agent-action/omitted";
 const OMITTED_DATA = "[extension data omitted from the export]";
 const OMITTED_ENTRY =
   "[an entry of a kind the export does not know was omitted]";
@@ -59,17 +62,28 @@ type ExportedSession = Pick<
 >;
 
 /**
+ * The page may not load anything: a model-written `![](https://...)` would
+ * otherwise be fetched when the page is opened. Its scripts and styles are
+ * inline, and its own images are data: URLs.
+ */
+const CONTENT_SECURITY_POLICY =
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; base-uri 'none'; form-action 'none'";
+
+/**
  * Export the session's current branch to `dir`, outside the checkout. Never
  * throws: a file that cannot be made is removed and logged, redacted, and
- * left out of the result, so no partial file looks like a finished one.
+ * left out of the result, so no partial or earlier file looks like a
+ * finished one.
  */
-export async function exportSession(
+export async function writeSessionExport(
   session: ExportedSession,
   dir: string,
 ): Promise<SessionExport> {
   const jsonl = join(dir, SESSION_JSONL);
+  const html = join(dir, SESSION_HTML);
   try {
     await mkdir(dir, { recursive: true });
+    await Promise.all([rm(jsonl, { force: true }), rm(html, { force: true })]);
     await writeWhole(jsonl, (partial) =>
       writeFile(partial, serializeSession(session)),
     );
@@ -78,19 +92,31 @@ export async function exportSession(
     return {};
   }
 
-  const html = join(dir, SESSION_HTML);
   try {
     const exportFromFile = await htmlExporter();
     // Only the redacted JSONL, with a built-in theme: no custom tool
     // renderer, no extension and no user theme is involved.
-    await writeWhole(html, (partial) =>
-      exportFromFile(jsonl, { outputPath: partial, themeName: "dark" }),
-    );
+    await writeWhole(html, async (partial) => {
+      await exportFromFile(jsonl, { outputPath: partial, themeName: "dark" });
+      await writeFile(
+        partial,
+        withContentSecurityPolicy(await readFile(partial, "utf-8")),
+      );
+    });
   } catch (error) {
     core.warning(`The session's HTML export failed: ${diagnostic(error)}`);
     return { jsonl };
   }
   return { jsonl, html };
+}
+
+function withContentSecurityPolicy(page: string): string {
+  const head = "<head>";
+  if (!page.includes(head)) throw new Error("the HTML page has no <head>");
+  return page.replace(
+    head,
+    `${head}\n  <meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}">`,
+  );
 }
 
 /** Write a file under a temporary name, renamed only once it is complete. */
@@ -135,7 +161,7 @@ function diagnostic(error: unknown): string {
 }
 
 /** The redacted current branch, as pi's session JSONL. */
-export function serializeSession(session: ExportedSession): string {
+function serializeSession(session: ExportedSession): string {
   const header = {
     type: "session",
     version: CURRENT_SESSION_VERSION,
@@ -167,8 +193,12 @@ function exportEntry(entry: SessionEntry): Record<string, Json> {
     timestamp: text(entry.timestamp),
   };
   switch (entry.type) {
-    case "message":
-      return { ...base, message: exportMessage(entry.message) };
+    case "message": {
+      const message = exportMessage(entry.message);
+      return message
+        ? { ...base, message }
+        : omittedEntry(base, OMITTED_MESSAGE);
+    }
     case "thinking_level_change":
       return { ...base, thinkingLevel: text(entry.thinkingLevel) };
     case "model_change":
@@ -193,7 +223,7 @@ function exportEntry(entry: SessionEntry): Record<string, Json> {
         firstKeptEntryId: text(entry.firstKeptEntryId),
         tokensBefore: number(entry.tokensBefore),
         details: omittedData(entry.details),
-        usage: entry.usage && usage(entry.usage),
+        usage: optionalUsage(entry.usage),
         fromHook: boolean(entry.fromHook),
         systemMessage:
           entry.systemMessage && exportMessage(entry.systemMessage),
@@ -204,7 +234,7 @@ function exportEntry(entry: SessionEntry): Record<string, Json> {
         fromId: text(entry.fromId),
         summary: text(entry.summary),
         details: omittedData(entry.details),
-        usage: entry.usage && usage(entry.usage),
+        usage: optionalUsage(entry.usage),
         fromHook: boolean(entry.fromHook),
       };
     case "custom":
@@ -238,20 +268,30 @@ function exportEntry(entry: SessionEntry): Record<string, Json> {
     case "session_info":
       return { ...base, name: optionalText(entry.name) };
     default:
-      return {
-        ...base,
-        type: "custom",
-        customType: OMITTED_TYPE,
-        data: OMITTED_ENTRY,
-      };
+      return omittedEntry(base, OMITTED_ENTRY);
   }
+}
+
+/** The placeholder for an entry left out, in its place in the branch. */
+function omittedEntry(
+  base: Record<string, Json>,
+  note: string,
+): Record<string, Json> {
+  return {
+    ...base,
+    type: "custom_message",
+    customType: OMITTED_TYPE,
+    content: note,
+    display: true,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Messages
 
-function exportMessage(message: unknown): Record<string, Json> {
-  const m = (isObject(message) ? message : {}) as Record<string, unknown>;
+/** The message, or undefined for a kind the export does not know. */
+function exportMessage(message: unknown): Record<string, Json> | undefined {
+  const m = fields(message);
   const timestamp = number(m.timestamp);
   switch (m.role) {
     case "user":
@@ -277,7 +317,7 @@ function exportMessage(message: unknown): Record<string, Json> {
         toolName: text(m.toolName),
         content: content(m.content),
         details: toolDetails(m.toolName, m.details),
-        usage: m.usage === undefined ? undefined : usage(m.usage),
+        usage: optionalUsage(m.usage),
         nestedCalls: nestedCalls(m.nestedCalls),
         isError: boolean(m.isError) ?? false,
         timestamp,
@@ -333,13 +373,7 @@ function exportMessage(message: unknown): Record<string, Json> {
         timestamp,
       };
     default:
-      return {
-        role: "custom",
-        customType: OMITTED_TYPE,
-        content: OMITTED_MESSAGE,
-        display: true,
-        timestamp,
-      };
+      return undefined;
   }
 }
 
@@ -351,7 +385,7 @@ function content(value: unknown): Json {
 }
 
 function block(value: unknown): Json {
-  const b = (isObject(value) ? value : {}) as Record<string, unknown>;
+  const b = fields(value);
   switch (b.type) {
     case "text":
       return { type: "text", text: text(b.text) };
@@ -404,7 +438,7 @@ function nestedCalls(value: unknown): Json {
   const calls = Array.isArray(value.calls) ? value.calls : [];
   return {
     calls: calls.map((call) => {
-      const c = (isObject(call) ? call : {}) as Record<string, unknown>;
+      const c = fields(call);
       return {
         id: text(c.id),
         name: text(c.name),
@@ -430,7 +464,7 @@ function sections(value: unknown): Json {
 }
 
 function toolDefinition(value: unknown): Json {
-  const tool = (isObject(value) ? value : {}) as Record<string, unknown>;
+  const tool = fields(value);
   return {
     name: text(tool.name),
     description: text(tool.description),
@@ -438,10 +472,14 @@ function toolDefinition(value: unknown): Json {
   };
 }
 
+function optionalUsage(value: unknown): Json {
+  return value === undefined ? undefined : usage(value);
+}
+
 /** pi's Usage: token counts and their cost, numbers only. */
 function usage(value: unknown): Json {
-  const u = (isObject(value) ? value : {}) as Record<string, unknown>;
-  const cost = (isObject(u.cost) ? u.cost : {}) as Record<string, unknown>;
+  const u = fields(value);
+  const cost = fields(u.cost);
   return {
     input: number(u.input),
     output: number(u.output),
@@ -515,4 +553,9 @@ function json(value: unknown, depth = 0): Json {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** An object's fields to pick from; none for anything else. */
+function fields(value: unknown): Record<string, unknown> {
+  return isObject(value) ? value : {};
 }

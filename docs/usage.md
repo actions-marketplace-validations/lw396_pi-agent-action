@@ -146,7 +146,7 @@ Inputs that only made sense for Claude Code (`anthropic_api_key`, `claude_args`,
 - `session_jsonl`: the session as pi's JSONL, for scripts. pi's own session tools read it.
 - `session_html`: an HTML page made from that JSONL alone, readable offline in a browser.
 
-Both hold the same redacted record. Before anything is written, every string is redacted (known token formats; the environment's secret values, raw, URL-encoded and base64-encoded; and values of variables named like a credential, such as `DEPLOY_TOKEN`, down to 6 characters) and long strings are cut. Images, signatures, tool and extension data, and entries of kinds the export does not know are replaced by a placeholder that says what was left out. The export is for reading: it cannot resume the session.
+Both hold the same redacted record. Before anything is written, every string is redacted (known token formats; the environment's secret values, raw, URL-encoded and base64-encoded; and values of variables named like a credential, such as `DEPLOY_TOKEN`, down to 6 characters) and long strings are cut. Images, signatures, tool and extension data, and entries of kinds the export does not know are replaced by a placeholder that says what was left out, in both files. The page shows messages' HTML as text, and its Content Security Policy keeps it from loading anything, a model-written remote image included. The export is for reading: it cannot resume the session.
 
 The action uploads nothing. Upload the files in a later step, also when the run failed:
 

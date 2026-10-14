@@ -10,7 +10,7 @@ import {
   SessionManager,
   type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { exportSession } from "../../src/runner/session-export";
+import { writeSessionExport } from "../../src/runner/session-export";
 import { collectSecretValues } from "../../src/runner/secret-values";
 
 let dir: string;
@@ -170,7 +170,7 @@ function sessionWithUnknownKinds() {
   };
 }
 
-describe("exportSession", () => {
+describe("writeSessionExport", () => {
   beforeEach(() => {
     collectSecretValues({
       DEPLOY_TOKEN: SHORT_SECRET,
@@ -183,7 +183,7 @@ describe("exportSession", () => {
   });
 
   test("leaves no secret, image, signature or extension payload in either file", async () => {
-    const result = await exportSession(sessionWithUnknownKinds(), dir);
+    const result = await writeSessionExport(sessionWithUnknownKinds(), dir);
 
     const jsonl = await Bun.file(result.jsonl!).text();
     const html = await Bun.file(result.html!).text();
@@ -206,7 +206,7 @@ describe("exportSession", () => {
   });
 
   test("keeps the run's process, with placeholders for what it leaves out", async () => {
-    const result = await exportSession(sessionWithSecrets(), dir);
+    const result = await writeSessionExport(sessionWithSecrets(), dir);
     const jsonl = await Bun.file(result.jsonl!).text();
 
     for (const kept of [
@@ -242,19 +242,23 @@ describe("exportSession", () => {
   });
 
   test("replaces entries and messages of kinds it does not know with placeholders", async () => {
-    const result = await exportSession(sessionWithUnknownKinds(), dir);
+    const result = await writeSessionExport(sessionWithUnknownKinds(), dir);
 
     const entries = SessionManager.open(result.jsonl!).getBranch();
-    const [entry, message] = entries.slice(-2);
-    expect(entry).toMatchObject({
-      type: "custom",
+    // custom_message entries, the kind pi's HTML page shows, so the page
+    // says what was left out, as the JSONL does.
+    const placeholder = {
+      type: "custom_message",
       customType: "pi-agent-action/omitted",
-    });
-    expect(message).toMatchObject({
-      type: "message",
-      message: { role: "custom", customType: "pi-agent-action/omitted" },
-    });
+      display: true,
+    };
+    expect(entries.slice(-2)).toMatchObject([
+      { ...placeholder, id: "u1", content: expect.stringContaining("entry") },
+      { ...placeholder, id: "u2", content: expect.stringContaining("message") },
+    ]);
     expect(JSON.stringify(entries)).not.toContain("telemetry");
+    const embedded = await embeddedSessionData(result.html!);
+    expect(embedded.entries.slice(-2)).toEqual(entries.slice(-2));
   });
 
   test("fails without a file, and with a redacted diagnostic, when it cannot write", async () => {
@@ -264,7 +268,7 @@ describe("exportSession", () => {
     await Bun.write(blocked, "");
 
     try {
-      const result = await exportSession(sessionWithSecrets(), blocked);
+      const result = await writeSessionExport(sessionWithSecrets(), blocked);
 
       expect(result).toEqual({});
       expect(readdirSync(dir)).toEqual([`blocked-${SHORT_SECRET}`]);
@@ -283,7 +287,7 @@ describe("exportSession", () => {
     mkdirSync(join(dir, "pi-session.html.partial", "x"), { recursive: true });
 
     try {
-      const result = await exportSession(sessionWithSecrets(), dir);
+      const result = await writeSessionExport(sessionWithSecrets(), dir);
 
       expect(result).toEqual({ jsonl: join(dir, "pi-session.jsonl") });
       expect(readdirSync(dir)).not.toContain("pi-session.html");
@@ -296,7 +300,7 @@ describe("exportSession", () => {
   });
 
   test("keeps model-written HTML as data, out of the page's markup", async () => {
-    const result = await exportSession(sessionWithSecrets(), dir);
+    const result = await writeSessionExport(sessionWithSecrets(), dir);
 
     const html = await Bun.file(result.html!).text();
     expect(html).not.toContain("pwned");
@@ -317,7 +321,7 @@ describe("exportSession", () => {
     });
     session.appendMessage(assistant("Fixed it."));
 
-    const result = await exportSession(session, dir);
+    const result = await writeSessionExport(session, dir);
 
     expect(result.jsonl).toBe(join(dir, "pi-session.jsonl"));
     expect(result.html).toBe(join(dir, "pi-session.html"));
@@ -341,10 +345,14 @@ describe("exportSession", () => {
     expect(data.entries).toEqual(reopened.getEntries());
     expect(data.leafId).toBe(reopened.getLeafId());
 
-    // Readable offline: nothing is loaded from elsewhere.
+    // Readable offline: nothing is loaded from elsewhere, and its Content
+    // Security Policy keeps a model-written remote image from loading.
     const html = await Bun.file(result.html!).text();
     expect(html).not.toMatch(/<script[^>]+src=/);
     expect(html).not.toMatch(/<link[^>]+href=/);
+    expect(html).toMatch(
+      /<head>\n  <meta http-equiv="Content-Security-Policy" content="default-src 'none';[^"]*img-src data: blob:;/,
+    );
     expect(readdirSync(dir).sort()).toEqual([
       "pi-session.html",
       "pi-session.jsonl",

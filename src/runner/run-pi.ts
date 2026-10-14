@@ -27,7 +27,7 @@ import {
   type SessionStatsRecord,
 } from "./execution-file";
 import { mcpServerExtensions, type McpServers } from "./mcp-servers";
-import { exportSession, type SessionExport } from "./session-export";
+import { writeSessionExport, type SessionExport } from "./session-export";
 import {
   createAuditCollector,
   type AuditCollector,
@@ -140,7 +140,7 @@ export type RunnerResult = {
   sessionExport?: SessionExport;
 };
 
-/** Where exportSession writes, under RUNNER_TEMP: outside the checkout. */
+/** Where the session export is written, under RUNNER_TEMP: outside the checkout. */
 const SESSION_EXPORT_DIR = "pi-session-export";
 
 // Streaming deltas: message_end and tool_execution_end carry the final values.
@@ -346,7 +346,7 @@ export async function runPi(
   core.info(`Set session_id: ${sessionId}`);
   // The in-memory session outlives its AgentSession: no raw copy is written.
   const sessionExport = options.exportSession
-    ? await exportSession(
+    ? await writeSessionExport(
         sessionManager,
         join(process.env.RUNNER_TEMP || tmpdir(), SESSION_EXPORT_DIR),
       )
