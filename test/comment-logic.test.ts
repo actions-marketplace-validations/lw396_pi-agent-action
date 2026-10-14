@@ -69,6 +69,50 @@ describe("updateCommentBody", () => {
     });
   });
 
+  describe("spinner left by the model", () => {
+    const spinner =
+      '<img src="https://raw.githubusercontent.com/lw396/pi-agent-action/main/assets/spinner.gif" width="14px" height="14px" style="vertical-align: middle; margin-left: 4px;" />';
+
+    it("removes a spinner on its own line so the checklist under it renders", () => {
+      // An HTML line swallows the lines after it up to a blank line, so GitHub
+      // shows this checklist as plain text until the spinner is gone.
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: `### Implemented, committing\n${spinner}\n- [x] Add the endpoint\n- [ ] Push the branch`,
+        actionFailed: true,
+        executionDetails: { duration_ms: 30000 },
+      });
+
+      expect(result).toEndWith(
+        "---\n### Implemented, committing\n- [x] Add the endpoint\n- [ ] Push the branch",
+      );
+    });
+
+    it("keeps images that are not this repository's spinner", () => {
+      const other =
+        '<img src="https://example.com/not-spinner.gif" width="14" />';
+      const lookalike =
+        '<img src="https://example.com/loading-spinner.gif.png" />';
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: `Intro ${other}\n${lookalike}\nAnswer.`,
+        triggerUsername: "trigger-user",
+      });
+
+      expect(result).toEndWith(`---\nIntro ${other}\n${lookalike}\nAnswer.`);
+    });
+
+    it("removes a spinner at the end of a heading after a normal end", () => {
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: `### Working ${spinner}\n\nAnswer.`,
+        triggerUsername: "trigger-user",
+      });
+
+      expect(result).toEndWith("---\n### Working\n\nAnswer.");
+    });
+  });
+
   describe("working message replacement", () => {
     it("includes success message header with duration", () => {
       const input = {

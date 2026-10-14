@@ -265,6 +265,32 @@ describe("generatePrompt", () => {
     expect(prompt).not.toContain("finished");
   });
 
+  test("keeps the spinner off a line of its own, where it stops the Markdown under it rendering", () => {
+    const prompt = generatePrompt(
+      {
+        repository: "owner/repo",
+        trackingCommentId: "12345",
+        triggerPhrase: "@pi",
+        eventData: {
+          eventName: "issue_comment",
+          commentId: "67890",
+          isPR: false,
+          issueNumber: "789",
+          commentBody: "@pi complete this issue",
+          baseBranch: "main",
+          agentBranch: "pi/issue-789",
+        },
+      },
+      mockGitHubData,
+      false,
+      "tag",
+    );
+
+    expect(prompt).toContain(
+      "Put it at the end of your comment's first line; on a line of its own it stops the lines below it from rendering.",
+    );
+  });
+
   test("uses concise environment and completion contracts instead of a prescribed reasoning workflow", () => {
     const context: PreparedContext = {
       repository: "owner/repo",
