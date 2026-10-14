@@ -193,7 +193,13 @@ inputs:
     required: false
     default: ""
   display_report:
-    description: "Whether to display the pi Agent Report in GitHub Step Summary. Set to 'false' to disable when using custom formatting solutions. WARNING: This outputs model-authored content in the GitHub Step Summary. This should only be used in cases where the action is used solely with trusted input."
+    description: >-
+      Whether to display the detailed pi Agent Report in the GitHub Job
+      Summary, below the run summary (counts, tokens and estimated cost) that
+      is always written. Set to 'false' to disable when using custom
+      formatting solutions. WARNING: The report outputs model-authored content
+      in the GitHub Job Summary. This should only be used in cases where the
+      action is used solely with trusted input.
     required: false
     default: "false"
   show_full_output:

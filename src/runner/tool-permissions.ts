@@ -158,12 +158,18 @@ export function checkToolCall(
  * The tool permissions extension: enforces the allowed_tools and
  * disallowed_tools inputs on every tool call, including calls one tool makes
  * through another (pi sends those through tool_call too). A blocked call is
- * not run; the model gets the reason as the call's error result.
+ * not run; the model gets the reason as the call's error result, and
+ * onBlocked hears of it, for the run audit.
  */
 export function toolPermissionsExtension(
   permissions: ToolPermissions,
+  onBlocked?: (toolCallId: string) => void,
 ): ExtensionFactory {
   return (pi) => {
-    pi.on("tool_call", (event) => checkToolCall(permissions, event));
+    pi.on("tool_call", (event) => {
+      const result = checkToolCall(permissions, event);
+      if (result?.block) onBlocked?.(event.toolCallId);
+      return result;
+    });
   };
 }

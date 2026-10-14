@@ -7,8 +7,6 @@
  */
 
 import * as core from "@actions/core";
-import { appendFile } from "fs/promises";
-import { existsSync, readFileSync } from "fs";
 import { setupGitHubToken, WorkflowValidationSkipError } from "../github/token";
 import { checkWritePermissions } from "../github/validation/permissions";
 import { createOctokit } from "../github/api/client";
@@ -30,44 +28,14 @@ import { restoreConfigFromBase } from "../github/operations/restore-config";
 import { validateBranchName } from "../github/operations/branch";
 import { assertNoRemovedInputs } from "./removed-inputs";
 import { updateCommentLink } from "./update-comment-link";
-import { formatTurnsFromData } from "./format-turns";
+import { writeJobSummary } from "./job-summary";
 import { redactSecrets } from "../github/utils/sanitizer";
 import { collectSecretValues } from "../runner/secret-values";
 import { runPi } from "../runner/run-pi";
+import { RunnerFailure, type RunAudit } from "../runner/run-audit";
 import { readRunnerInputs, runnerOptions } from "../runner/run-plan";
 import { installSkills } from "../runner/skills";
-import {
-  readExecutionFile,
-  setExecutionFileOutputIfPresent,
-} from "../runner/execution-file";
-
-/**
- * Write the step summary from the Runner's Execution file.
- */
-async function writeStepSummary(executionFile: string): Promise<void> {
-  const summaryFile = process.env.GITHUB_STEP_SUMMARY;
-  if (!summaryFile) return;
-
-  try {
-    const markdown = formatTurnsFromData(readExecutionFile(executionFile));
-    await appendFile(summaryFile, markdown);
-    console.log("Successfully formatted pi Agent report");
-  } catch (error) {
-    console.error(`Failed to format output: ${error}`);
-    // Fall back to raw JSON
-    try {
-      let fallback = "## pi Agent Report (Raw Output)\n\n";
-      fallback +=
-        "Failed to format output (please report). Here's the raw JSON:\n\n";
-      fallback += "```json\n";
-      fallback += redactSecrets(readFileSync(executionFile, "utf-8"));
-      fallback += "\n```\n";
-      await appendFile(summaryFile, fallback);
-    } catch {
-      console.error("Failed to write raw output to step summary");
-    }
-  }
-}
+import { setExecutionFileOutputIfPresent } from "../runner/execution-file";
 
 async function run() {
   // Before anything changes the environment: every redactSecrets() call in
@@ -79,6 +47,10 @@ async function run() {
   let agentBranch: string | undefined;
   let baseBranch: string | undefined;
   let executionFile: string | undefined;
+  // Set once runPi() is called: from then on the Job Summary gets the run
+  // summary, with runAudit if the session got far enough to report one.
+  let runnerStarted = false;
+  let runAudit: RunAudit | undefined;
   let agentSuccess = false;
   let prepareSuccess = true;
   let prepareError: string | undefined;
@@ -201,6 +173,7 @@ async function run() {
       }
     }
 
+    runnerStarted = true;
     const runResult = await runPi(prepareResult.prompt, {
       ...runnerOptions(runnerInputs, prepareResult),
       skillsDir,
@@ -208,6 +181,7 @@ async function run() {
 
     agentSuccess = runResult.conclusion === "success";
     executionFile = runResult.executionFile;
+    runAudit = runResult.audit;
 
     // Set action-level outputs
     if (runResult.executionFile) {
@@ -222,6 +196,7 @@ async function run() {
     core.setOutput("conclusion", runResult.conclusion);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    if (error instanceof RunnerFailure) runAudit = error.audit;
     executionFile ??= setExecutionFileOutputIfPresent();
     core.setOutput("conclusion", "failure");
     // Only mark as prepare failure if we haven't completed the prepare phase
@@ -262,13 +237,15 @@ async function run() {
       }
     }
 
-    // Write step summary (unless display_report is set to false)
-    if (
-      executionFile &&
-      existsSync(executionFile) &&
-      process.env.DISPLAY_REPORT !== "false"
-    ) {
-      await writeStepSummary(executionFile);
+    // The run summary is always written once the Runner started; the
+    // detailed report too, unless display_report is set to false.
+    if (runnerStarted || executionFile) {
+      await writeJobSummary({
+        summaryFile: process.env.GITHUB_STEP_SUMMARY,
+        audit: runAudit,
+        executionFile,
+        displayReport: process.env.DISPLAY_REPORT !== "false",
+      });
     }
 
     // Set remaining action-level outputs

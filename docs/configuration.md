@@ -235,7 +235,7 @@ with:
 
 ## Limiting time and cost
 
-There is no turn limit. Bound a run with the job's `timeout-minutes`, keep `allowed_tools` narrow, and pick a cheaper model for routine jobs. The `execution_file` output and the step summary (`display_report: true`) show tokens and cost per run.
+There is no turn limit. Bound a run with the job's `timeout-minutes`, keep `allowed_tools` narrow, and pick a cheaper model for routine jobs. The run summary in the Job Summary shows each run's tokens and estimated cost, and the `execution_file` output has the full record.
 
 ```yaml
 jobs:

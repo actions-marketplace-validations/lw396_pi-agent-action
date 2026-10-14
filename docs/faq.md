@@ -101,9 +101,26 @@ It cannot push to a closed pull request's branch, so it creates a new one, as it
 
 ### How do I see what the agent did?
 
-- The step summary shows the pi Agent Report when `display_report: true`.
+- The Job Summary always shows the run summary: how the session ended, how many model responses and tool calls it made, and tokens and cost. See [What does the run summary show?](#what-does-the-run-summary-show).
+- The Job Summary also shows the pi Agent Report, with the agent's text and every tool call, when `display_report: true`.
 - `show_full_output: true`, or re-running the job with debug logging, prints every pi event in the job log. Tool results can contain sensitive data; use it on private repositories only.
 - The `execution_file` output is the full record of the run, with token usage and cost.
+
+### What does the run summary show?
+
+Every run that reaches the agent writes a short "pi run summary" to the Job Summary of the workflow run, with no input to set. Failed runs get one too. It answers:
+
+- **How the session ended**: completed, stopped at the output limit, model error, aborted, no model response, no structured result (`json_schema`), or Runner error. This is how the pi session ended, not whether the task was done: the action does not judge the agent's work, and does not read the model's claims or checkboxes.
+- **How long it ran**, and **how many model responses and tool calls** it made: calls attempted, calls that ran and failed, and calls the `allowed_tools` and `disallowed_tools` rules denied. The counts come from the Runner's session events, each call counted once.
+- **Tokens**: input, output, cache read, cache write and their total, summed over the model responses as the provider reported them. Input does not include cached tokens. A provider that does not report cache usage shows 0 for it.
+- **Estimated cost**, priced from the pi SDK's model catalog. It can differ from your bill, especially with a custom endpoint (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`).
+
+A value the run could not measure shows as `unavailable`, never as 0. When the Runner stops before the session starts, for example because `model` names an unknown model, the summary says that statistics are unavailable.
+
+It does not show what the agent did: no prompt, model text or reasoning, file contents, tool arguments, commands, command output or error messages. The summary is built only from numbers and fixed labels, so it is safe to publish on a public repository without relying on redaction. For more:
+
+- `display_report: true` adds the pi Agent Report below it, with the agent's text, each tool call and its result. It contains model-written content; enable it only for trusted input.
+- The `execution_file` output is the full record of the session. It can contain sensitive content and is not uploaded or published by the action.
 
 ### Why do some values in comments show as `[REDACTED]`?
 

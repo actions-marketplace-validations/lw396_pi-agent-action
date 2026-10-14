@@ -28,6 +28,13 @@ import {
 } from "./execution-file";
 import { mcpServerExtensions, type McpServers } from "./mcp-servers";
 import {
+  createAuditCollector,
+  RunnerFailure,
+  type AuditCollector,
+  type RunAudit,
+  type Termination,
+} from "./run-audit";
+import {
   toolPermissionsExtension,
   type ToolPermissions,
 } from "./tool-permissions";
@@ -122,6 +129,8 @@ export type RunnerResult = {
   executionFile?: string;
   sessionId?: string;
   structuredOutput?: string;
+  /** What the session did, safe to publish. A failed run throws it in a RunnerFailure. */
+  audit: RunAudit;
 };
 
 // Streaming deltas: message_end and tool_execution_end carry the final values.
@@ -158,7 +167,9 @@ const AGENT_HIDDEN_ENV = [
  * Run one pi session on the prompt, in this process (ADR-0001).
  *
  * The Execution file is written whether the session succeeds or fails. A
- * failed session throws after the file is written, like Upstream's executor.
+ * failed session throws a RunnerFailure after the file is written, like
+ * Upstream's executor; a run that fails before the session starts throws a
+ * plain Error.
  */
 export async function runPi(
   prompt: string,
@@ -179,6 +190,7 @@ export async function runPi(
   const cwd = options.cwd ?? process.cwd();
   const structuredOutput = createStructuredOutput(options.jsonSchema);
   const toolPermissions = buildToolPermissions(options, cwd, structuredOutput);
+  const auditCollector = createAuditCollector();
   const customTools = bashTools(options, cwd);
 
   for (const name of AGENT_HIDDEN_ENV) {
@@ -216,7 +228,7 @@ export async function runPi(
     agentDir,
     settingsManager,
     extensionFactories: [
-      toolPermissionsExtension(toolPermissions),
+      toolPermissionsExtension(toolPermissions, auditCollector.denied),
       createCodemodeExtension(),
       commentRedactionExtension(),
       ...(structuredOutput ? [structuredOutput.extension] : []),
@@ -306,10 +318,11 @@ export async function runPi(
     sessionManager.getHeader(),
     options.showFullOutput,
   );
-  const { failure, stats } = await runSession(
+  const { failure, stats, audit } = await runSession(
     session,
     command ? `${prompt}\n\n${command}` : prompt,
     structuredOutput,
+    auditCollector,
   );
   const totals: SessionStatsRecord = { type: "session_stats", ...stats };
   records.push(totals);
@@ -322,13 +335,14 @@ export async function runPi(
   core.info(`Set session_id: ${sessionId}`);
 
   if (failure !== undefined) {
-    throw new Error(`pi execution failed: ${failure}`);
+    throw new RunnerFailure(`pi execution failed: ${failure}`, audit);
   }
   return {
     conclusion: "success",
     executionFile,
     sessionId,
     structuredOutput: structuredOutput?.output(),
+    audit,
   };
 }
 
@@ -411,29 +425,45 @@ function recordEvents(
 
 /**
  * Prompt the session and dispose of it. Returns why the run failed, if it did,
- * and the totals for the whole run, so spend can be tracked per run.
+ * the totals for the whole run, so spend can be tracked per run, and the run
+ * audit.
  */
 async function runSession(
   session: AgentSession,
   prompt: string,
   structuredOutput: StructuredOutput | undefined,
+  auditCollector: AuditCollector,
 ) {
   let failure: string | undefined;
+  let termination: Termination;
+  const unsubscribe = session.subscribe(auditCollector.observe);
   const startedAt = Date.now();
   try {
     await session.bindExtensions({});
     await session.prompt(prompt);
-    failure = sessionFailure(session.messages) ?? structuredOutput?.failure();
+    termination = sessionTermination(session.messages);
+    failure = sessionFailure(session.messages);
+    if (failure === undefined) {
+      failure = structuredOutput?.failure();
+      if (failure !== undefined) termination = "structured_output_missing";
+    }
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
+    termination = "runner_error";
   }
+  const durationMs = Date.now() - startedAt;
+  unsubscribe();
   const {
     sessionFile: _file,
     contextUsage: _context,
     ...totals
   } = session.getSessionStats();
   await closeSession(session);
-  return { failure, stats: { ...totals, durationMs: Date.now() - startedAt } };
+  return {
+    failure,
+    stats: { ...totals, durationMs },
+    audit: auditCollector.audit(termination, durationMs),
+  };
 }
 
 /**
@@ -447,6 +477,22 @@ async function closeSession(session: AgentSession) {
     await runner.emit({ type: "session_shutdown", reason: "quit" });
   }
   session.dispose();
+}
+
+/** How the session ended, from the stop reason of its last response. */
+function sessionTermination(messages: AgentSession["messages"]): Termination {
+  const last = messages.findLast((m) => m.role === "assistant");
+  if (!last) return "no_response";
+  switch (last.stopReason) {
+    case "error":
+      return "model_error";
+    case "aborted":
+      return "aborted";
+    case "length":
+      return "output_limit";
+    default:
+      return "completed";
+  }
 }
 
 /**

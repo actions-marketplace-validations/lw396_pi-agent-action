@@ -93,7 +93,9 @@ Set `subprocess_isolation: false` to turn off both the allowlist and the sandbox
 
 ## Output redaction
 
-Comments, the step summary, error messages and the full output log are redacted before they are published:
+Comments, the pi Agent Report (`display_report`), error messages and the full output log are redacted before they are published. The run summary that is always written to the Job Summary does not need redaction: it holds only counts, token usage, cost and fixed labels, and no text from the model, tools or repository.
+
+Redaction works as follows:
 
 - Known token formats are matched by pattern: GitHub, Anthropic, OpenAI, OpenRouter, Google, AWS, Slack and JWTs.
 - Every environment value of 16 characters or more is treated as a secret and replaced with `[REDACTED]`, raw, base64-encoded or URL-encoded, unless it is the value of a variable on the bash allowlist, one of the action's own settings that are not credentials (such as `prompt` and `model`; `pi_args` is still treated as a secret), or an existing file system path. This covers keys of providers with no known format.
@@ -282,4 +284,4 @@ Only enable `show_full_output: true` or debug logging when:
 
 ### Recommended Practice
 
-For debugging, prefer `show_full_output: false` (the default), which logs only the run's token and cost totals. The step summary (`display_report: true`) shows tool calls and their results too, so it carries the same risks.
+For debugging, prefer `show_full_output: false` (the default), which logs only the run's token and cost totals, and the run summary in the Job Summary, which adds counts of responses, tool calls, failures and denials. The pi Agent Report (`display_report: true`) shows tool calls and their results too, so it carries the same risks as full output.

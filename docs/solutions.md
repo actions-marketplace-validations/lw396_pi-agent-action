@@ -168,4 +168,4 @@ jobs:
 - **Give context in the prompt.** Agent mode does not fetch the issue or pull request for the agent; include `github.repository` and the number, and allow the `gh` commands it needs to read them.
 - **Allow commands one by one.** A command matched by a `Bash(...)` rule cannot be chained with `&&` or `|`. List each command the job needs.
 - **Bound the run.** Set `timeout-minutes` on the job and choose a model priced for the job.
-- **Check the cost.** `display_report: true` writes the turns, tokens and cost to the step summary.
+- **Check the cost.** The run summary in the Job Summary shows each run's tokens and estimated cost; `display_report: true` adds the turns.
