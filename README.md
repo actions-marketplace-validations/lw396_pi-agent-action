@@ -133,37 +133,6 @@ Everything else that behaves differently from claude-code-action, and why, is re
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-### Removed inputs
-
-A workflow that still sets one of these inputs fails, naming the input and what to use instead.
-
-| Removed input                                                                                                                                    | YAML change                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `anthropic_api_key`                                                                                                                              | `model: anthropic/<id>`, and `ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}` in `env:` (or `api_key: ${{ secrets.ANTHROPIC_API_KEY }}`)                     |
-| `claude_code_oauth_token`                                                                                                                        | An API key for the model's provider, in `env:` under pi's variable name or in `api_key`                                                                           |
-| `anthropic_federation_rule_id`, `anthropic_organization_id`, `anthropic_service_account_id`, `anthropic_workspace_id`, `anthropic_oidc_audience` | Not supported: remove them and use an API key for the model's provider                                                                                            |
-| `use_bedrock`                                                                                                                                    | `model: amazon-bedrock/<id>`, and AWS credentials (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, or `AWS_PROFILE`) and `AWS_REGION` in `env:`                  |
-| `use_vertex`                                                                                                                                     | `model: google-vertex/<id>`, and `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` and Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS`) in `env:` |
-| `use_foundry`                                                                                                                                    | Not supported: pi has no Microsoft Foundry provider; choose another provider in `model`                                                                           |
-| `claude_args`                                                                                                                                    | See the flag table below                                                                                                                                          |
-| `settings`                                                                                                                                       | Not supported: remove it; move permission rules to `allowed_tools` / `disallowed_tools`                                                                           |
-| `plugins`, `plugin_marketplaces`                                                                                                                 | Claude Code plugins are incompatible: remove them; use `skills` for generic skills or [`packages`](./docs/configuration.md#pi-packages) for native pi packages    |
-| `include_fix_links`                                                                                                                              | Remove it: its "Fix this" links opened Claude Code on the web, which pi has no equivalent of                                                                      |
-| `path_to_claude_code_executable`                                                                                                                 | Remove it: pi runs inside the action's own process, at the version the action pins                                                                                |
-
-Flags from `claude_args`:
-
-| `claude_args` flag                                 | YAML change                                                                                      |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `--model <id>`                                     | `model: <provider>/<id>`; append `:<level>` for a thinking level, e.g. `model: openai/<id>:high` |
-| `--allowedTools "..."`                             | `allowed_tools: "..."`, same rule syntax                                                         |
-| `--disallowedTools "..."`                          | `disallowed_tools: "..."`                                                                        |
-| `--json-schema '...'`                              | `json_schema: '...'`; the schema's root must be `"type": "object"`                               |
-| `--system-prompt "..."`                            | `pi_args: --system-prompt "..."` (`pi_args` takes pi's own flags only; see the `pi_args` input)  |
-| `--append-system-prompt "..."`                     | `pi_args: --append-system-prompt "..."`                                                          |
-| `--add-dir <dir>`                                  | Remove it: the read tools can read any path                                                      |
-| `--max-turns`, `--permission-mode`, `--mcp-config` | Remove them: there is no equivalent, and `pi_args` fails on them                                 |
-
 ## Documentation
 
 - [Setup](./docs/setup.md): model providers, the GitHub App or your own, and handling secrets
