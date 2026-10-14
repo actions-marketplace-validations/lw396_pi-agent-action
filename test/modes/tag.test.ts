@@ -142,6 +142,34 @@ describe("Tag Mode", () => {
       expect(calls).toEqual(["setupBranch", "hashChangedFiles"]);
     });
 
+    // With actions/checkout's persist-credentials: false, the branch setup's
+    // git fetch of a private repository has only the action's token.
+    test("configures git auth before setting up the branch", async () => {
+      const calls: string[] = [];
+      configureGitAuthSpy.mockImplementation(async () => {
+        calls.push("configureGitAuth");
+      });
+      const setupBranchSpy = spyOn(branch, "setupBranch").mockImplementation(
+        async () => {
+          calls.push("setupBranch");
+          return { baseBranch: "main", currentBranch: "feature" } as any;
+        },
+      );
+      try {
+        await prepareTagMode({
+          context: { ...mockIssueCommentContext },
+          octokit: {} as any,
+          githubToken: "test-token",
+          allowedTools: [],
+          untrustedInput: false,
+        });
+      } finally {
+        setupBranchSpy.mockRestore();
+      }
+
+      expect(calls).toEqual(["configureGitAuth", "setupBranch"]);
+    });
+
     test("still replaces the checkout credential when API commit signing is enabled", async () => {
       const context = {
         ...mockIssueCommentContext,

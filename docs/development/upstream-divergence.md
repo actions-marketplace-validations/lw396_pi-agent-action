@@ -103,6 +103,8 @@
 | PR 场景的配置恢复  | `SENSITIVE_PATHS` 只有 Claude 的路径 → 补上 `.pi`、`.agents`、`AGENTS.md`、`AGENTS.MD`、`AGENTS.override.md`、`CLAUDE.MD`（`src/github/operations/restore-config.ts`）                                            | `pi-capability`  | 否       |
 | 输出脱敏           | 按格式匹配 GitHub、Anthropic、AWS、Slack、JWT → 加上 OpenAI、OpenRouter、Gemini 的格式，以及按值匹配长度不少于 16 的非白名单 env 值（`src/runner/secret-values.ts`、`src/runner/comment-redaction.ts`，ADR-0002） | `multi-provider` | 是       |
 
+| tag mode 的 git 凭据 | 先建分支（`git fetch`、`git ls-remote`），再换成 action 的 token → 先换 token 再建分支；checkout 设了 `persist-credentials: false` 时，私有仓库的分支准备不再因没有凭据失败（`src/modes/tag/index.ts`） | `improvement` | 是 |
+
 - 用白名单而不是黑名单：上游的黑名单在 Claude Code 内部，拿不到；provider 太多，黑名单也列不全。`GH_TOKEN` 同样被去掉，所以 bash 中的 `git push` 和 `gh` 要显式放行它。
 - 文件工具在 pi 进程内执行，不经过 bwrap，能直接读 `/proc/self/environ`，所以要单独拦截。检查和执行之间被并行的 bash 换掉符号链接的竞争无法排除。
 - 按值脱敏：OpenCode 等 key 格式未知的 provider 只能按值识别；代价是 workflow 自己设置的长 env 值（URL 等）也会被替换。

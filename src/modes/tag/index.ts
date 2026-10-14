@@ -57,7 +57,13 @@ export async function prepareTagMode({
     excludeCommentsByActor: context.inputs.excludeCommentsByActor,
   });
 
-  // Setup branch
+  const commitMethod = await setupGitAuth({
+    githubToken,
+    context,
+    untrustedInput,
+    failOnError: true,
+  });
+
   const branchInfo = await setupBranch(octokit, fetchedData, context);
 
   // Hash the PR's changed files now that its branch is checked out.
@@ -65,13 +71,6 @@ export async function prepareTagMode({
     ...fetchedData,
     changedFilesWithSHA: hashChangedFiles(fetchedData.changedFiles),
   };
-
-  const commitMethod = await setupGitAuth({
-    githubToken,
-    context,
-    untrustedInput,
-    failOnError: true,
-  });
 
   const { prompt, userRequest } = createPrompt(
     commentId,
