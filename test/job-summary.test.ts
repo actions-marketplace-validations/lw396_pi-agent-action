@@ -285,13 +285,43 @@ describe("writeJobSummary", () => {
     }
   });
 
-  test("does nothing outside GitHub Actions", async () => {
-    await writeJobSummary({
-      summaryFile: undefined,
-      audit,
-      displayReport: true,
-    });
+  test("logs the bytes it wrote, so a run shows the summary was published", async () => {
+    const info = spyOn(core, "info").mockImplementation(() => {});
+    try {
+      await writeJobSummary({
+        summaryFile,
+        audit,
+        executionFile,
+        displayReport: false,
+      });
 
-    expect(await summary()).toBe("");
+      const lines = info.mock.calls.map(([message]) => String(message));
+      const published = lines.find((line) => line.includes("Job Summary"));
+      expect(published).toBeDefined();
+      // The count it reports is what actually reached the file.
+      const bytes = Number(published!.match(/(\d+) bytes/)![1]);
+      expect(bytes).toBe(Buffer.byteLength(await summary(), "utf-8"));
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  test("does nothing outside GitHub Actions, and says why", async () => {
+    const info = spyOn(core, "info").mockImplementation(() => {});
+    try {
+      await writeJobSummary({
+        summaryFile: undefined,
+        audit,
+        displayReport: true,
+      });
+
+      expect(await summary()).toBe("");
+      expect(info).toHaveBeenCalledTimes(1);
+      const said = String(info.mock.calls[0]![0]);
+      expect(said).toContain("GITHUB_STEP_SUMMARY");
+      expect(said).toContain("no run summary");
+    } finally {
+      info.mockRestore();
+    }
   });
 });

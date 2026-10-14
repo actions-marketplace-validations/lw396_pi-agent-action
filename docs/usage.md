@@ -64,7 +64,7 @@ Running commands other than `git add`, `commit` and `push` needs `allowed_tools`
 | Input      | Description                                                                                                                                                                                                                                                        | Default |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
 | `model`    | **Required.** The model, as `<provider>/<model-id>`, optionally with `:<thinking-level>` (e.g. `openai/<model-id>:high`). See [Model providers](./setup.md#model-providers)                                                                                        | -       |
-| `api_key`  | API key for the `model` provider, used instead of the provider's environment variable                                                                                                                                                                              | -       |
+| `api_key`  | API key for the `model` provider, used instead of the provider's environment variable. Pass it from a secret: a literal value is echoed into the job log                                                                                                           | -       |
 | `skills`   | Agent skills to install with `gh skill install`, one per line: `OWNER/REPO <skill>[@version]`, or `OWNER/REPO --all`; `--pin` and `--allow-hidden-dirs` are also accepted. See [Skills from other repositories](./configuration.md#skills-from-other-repositories) | `""`    |
 | `packages` | Trusted pi packages, one `npm:NAME[@VERSION]` or `git:HOST/OWNER/REPO[@REF]` per line. Installs outside the checkout; extensions run as code inside the action. See [Pi packages](./configuration.md#pi-packages)                                                  | `""`    |
 | `pi_args`  | Extra pi flags. Supported: `--thinking`, `--system-prompt`, `--append-system-prompt`, `--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `--no-skills`, `--no-prompt-templates`, `--no-context-files`. Any other flag fails the run                 | `""`    |
@@ -159,7 +159,7 @@ The action uploads nothing. Upload the files in a later step, also when the run 
     model: opencode/gpt-6-luna
     prompt: "..."
     export_session: true
-- uses: actions/upload-artifact@v4
+- uses: actions/upload-artifact@v7
   if: always() && steps.pi.outputs.session_jsonl != ''
   with:
     name: pi-session

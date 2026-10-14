@@ -75,7 +75,14 @@ export async function writeJobSummary(options: {
   displayReport: boolean;
 }): Promise<void> {
   const { summaryFile, executionFile } = options;
-  if (!summaryFile) return;
+  if (!summaryFile) {
+    // Outside Actions nothing publishes a summary; say so rather than skip
+    // silently, so a run in Actions that lost the variable is visible too.
+    core.info(
+      "GITHUB_STEP_SUMMARY is not set, so there is no run summary to write.",
+    );
+    return;
+  }
 
   let summary: string;
   try {
@@ -86,6 +93,11 @@ export async function writeJobSummary(options: {
   }
   try {
     await appendFile(summaryFile, summary);
+    // The positive signal: without it, "no warning" would not tell a reader
+    // whether the summary was published or never written at all.
+    core.info(
+      `Wrote ${Buffer.byteLength(summary, "utf-8")} bytes of run summary to the Job Summary.`,
+    );
   } catch {
     core.warning("The run summary could not be written to the Job Summary.");
   }
