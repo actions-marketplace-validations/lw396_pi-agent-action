@@ -26,6 +26,7 @@ describe("readRunnerInputs", () => {
       JSON_SCHEMA: '{"type":"object"}',
       INPUT_SKILLS: "github/awesome-copilot git-commit@v1.2.0",
       ALLOWED_BASH_ENV: "NPM_TOKEN",
+      INPUT_EXPORT_SESSION: "true",
     });
 
     expect(inputs).toEqual({
@@ -44,6 +45,7 @@ describe("readRunnerInputs", () => {
       isolateBash: false,
       allowedBashEnv: "NPM_TOKEN",
       showFullOutput: false,
+      exportSession: true,
     });
   });
 
@@ -186,6 +188,20 @@ describe("readRunnerInputs", () => {
       expect(readRunnerInputs(env).showFullOutput).toBe(shown);
     },
   );
+
+  test.each([
+    [{}, false],
+    [{ INPUT_EXPORT_SESSION: "true" }, true],
+    [{ INPUT_EXPORT_SESSION: "false" }, false],
+    // A debug rerun shows full output, but does not export the session.
+    [{ RUNNER_DEBUG: "1", INPUT_SHOW_FULL_OUTPUT: "true" }, false],
+  ])("exports the session only with export_session: %p", (env, exported) => {
+    const inputs = readRunnerInputs(env);
+    expect(inputs.exportSession).toBe(exported);
+    expect(runnerOptions(inputs, NO_MODE_SETTINGS).exportSession).toBe(
+      exported,
+    );
+  });
 });
 
 describe("runnerOptions", () => {

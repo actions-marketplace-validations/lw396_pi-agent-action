@@ -103,6 +103,7 @@ It cannot push to a closed pull request's branch, so it creates a new one, as it
 
 - The Job Summary always shows the run summary: how the session ended, how many model responses and tool calls it made, and tokens and cost. See [What does the run summary show?](#what-does-the-run-summary-show).
 - The Job Summary also shows the pi Agent Report, with the agent's text and every tool call, when `display_report: true`.
+- `export_session: true` exports the redacted session as pi's JSONL and an offline HTML page, for an upload step. See [Exporting the session](usage.md#exporting-the-session).
 - `show_full_output: true`, or re-running the job with debug logging, prints every pi event in the job log. Tool results can contain sensitive data; use it on private repositories only.
 - The `execution_file` output is the full record of the run, with token usage and cost.
 

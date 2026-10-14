@@ -282,6 +282,10 @@ Only enable `show_full_output: true` or debug logging when:
 - You have verified no secrets will be exposed in the output
 - You understand the security implications
 
+### Session export
+
+`export_session` is also **disabled by default**. It writes the redacted session to files, for a later step to upload as an artifact; the action itself uploads nothing. The export goes further than [Output redaction](#output-redaction): it also redacts short values of variables named like a credential, and leaves out images, signatures and tool and extension data. It still holds every tool result, and on a public repository anyone who can see the run can download its artifacts. Enable it only for runs whose input you trust, and keep the artifact's retention short. See [Exporting the session](usage.md#exporting-the-session).
+
 ### Recommended Practice
 
 For debugging, prefer `show_full_output: false` (the default), which logs only the run's token and cost totals, and the run summary in the Job Summary, which adds counts of responses, tool calls, failures and denials. The pi Agent Report (`display_report: true`) shows tool calls and their results too, so it carries the same risks as full output.

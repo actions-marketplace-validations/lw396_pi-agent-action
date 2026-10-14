@@ -120,8 +120,10 @@
 | step summary       | `Claude Code Report`，解析 SDK 消息 → `pi Agent Report`，解析 pi 事件（`src/entrypoints/format-turns.ts`）                                                                                                                                                                                                                           | `pi-capability`、`branding` | 是       |
 | `show_full_output` | 原样打印 SDK 消息 → 打印 pi 事件，先脱敏                                                                                                                                                                                                                                                                                             | `pi-capability`             | 是       |
 | 默认运行摘要       | 不设 `display_report` 时 step summary 为空 → 只要 Runner 启动（含可捕获的失败），就写一份 `pi run summary`：会话终止类别、时长、模型响应数、工具调用尝试/失败/权限拒绝数、token 用量和估算成本；只含数字和固定标签，不依赖脱敏；`display_report` 的详细报告写在它后面（`src/entrypoints/job-summary.ts`、`src/runner/run-audit.ts`） | `improvement`               | 是       |
+| 会话导出           | 无 → 新增 `export_session`（默认关闭）：会话结束后把 Runner 内存会话的当前分支逐字段重建、脱敏、截断，写成 pi 的 JSONL，再只用这份 JSONL 经 pi SDK 的 HTML exporter 生成离线页面，路径作为 `session_jsonl`、`session_html` 输出，不自动上传（`src/runner/session-export.ts`）                                                        | `pi-capability`             | 是       |
 | `session_id`       | 可以用 `--resume` 继续 → 会话只在内存中，不能继续（ADR-0001）                                                                                                                                                                                                                                                                        | `pi-capability`             | 是       |
 
+- 会话导出：Runner 用内存会话（ADR-0001），pi 的 HTML exporter 不接受内存会话，Execution file 也不是会话 JSONL，所以由 Runner 生成脱敏后的 JSONL 再交给 exporter；原始会话不落盘。exporter 不从包入口导出，按文件导入锁定版本，`test/pi-sdk/session-export.test.ts` 钉住所依赖的行为。按变量名脱敏短值只用于导出：导出包含每个工具结果，而评论和报告按原规则不变。
 - 默认运行摘要：完整输出和详细报告默认关闭，长时间运行后在页面上只能看到日志里的 token 和成本合计。摘要只由计数和固定类别拼成，不是脱敏后的事件，所以默认公开也不依赖脱敏；终止类别只说明会话怎样结束，不代表任务完成。
 
 ## 仓库与 CI

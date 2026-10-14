@@ -76,6 +76,7 @@ Running commands other than `git add`, `commit` and `push` needs `allowed_tools`
 | `json_schema`        | A JSON Schema with `"type": "object"`. The agent submits its result through a tool whose arguments must match the schema; the result is the `structured_output` output. See [Structured output](#structured-output)                                                            | `""`    |
 | `use_sticky_comment` | On pull requests, reuse the action's previous comment instead of posting a new one                                                                                                                                                                                             | `false` |
 | `display_report`     | Also write the pi Agent Report (the agent's turns, tool calls and results) to the Job Summary, below the run summary that is always written ([what it shows](faq.md#what-does-the-run-summary-show)). The report contains model-written text; enable it only for trusted input | `false` |
+| `export_session`     | Export the session, redacted, as pi's JSONL and an offline HTML page, for a later upload step. Nothing is uploaded automatically. See [Exporting the session](#exporting-the-session)                                                                                          | `false` |
 | `show_full_output`   | Log every pi event as JSON in the job log. Known secrets are redacted, but tool results can still contain sensitive data. For debugging only; a debug re-run does the same                                                                                                     | `false` |
 
 ### Tools
@@ -134,7 +135,53 @@ Inputs that only made sense for Claude Code (`anthropic_api_key`, `claude_args`,
 | `branch_name`       | The branch the agent created, if any                                                                                                            |
 | `structured_output` | The result as a JSON string, when `json_schema` is set                                                                                          |
 | `session_id`        | pi's session ID                                                                                                                                 |
+| `session_jsonl`     | With `export_session`: path to the redacted session as pi's JSONL, outside the checkout. Unset when the export failed                           |
+| `session_html`      | With `export_session`: path to the offline HTML page of the same redacted session. Unset when it failed                                         |
 | `github_token`      | The GitHub token the action used                                                                                                                |
+
+## Exporting the session
+
+`export_session: true` exports the run's pi session for review after the run: what the agent said, each tool call with its arguments and result, errors and token usage, in the order they happened. It writes two files to the runner's temp directory, outside the checkout:
+
+- `session_jsonl`: the session as pi's JSONL, for scripts. pi's own session tools read it.
+- `session_html`: an HTML page made from that JSONL alone, readable offline in a browser.
+
+Both hold the same redacted record. Before anything is written, every string is redacted (known token formats; the environment's secret values, raw, URL-encoded and base64-encoded; and values of variables named like a credential, such as `DEPLOY_TOKEN`, down to 6 characters) and long strings are cut. Images, signatures, tool and extension data, and entries of kinds the export does not know are replaced by a placeholder that says what was left out. The export is for reading: it cannot resume the session.
+
+The action uploads nothing. Upload the files in a later step, also when the run failed:
+
+```yaml
+- uses: lw396/pi-agent-action@v1
+  id: pi
+  with:
+    model: opencode/gpt-6-luna
+    prompt: "..."
+    export_session: true
+- uses: actions/upload-artifact@v4
+  if: always() && steps.pi.outputs.session_jsonl != ''
+  with:
+    name: pi-session
+    path: |
+      ${{ steps.pi.outputs.session_jsonl }}
+      ${{ steps.pi.outputs.session_html }}
+    retention-days: 7 # 7 to 14 days is usually enough to review a run
+    if-no-files-found: ignore
+```
+
+Before you turn it on:
+
+- **Artifacts are not private.** On a public repository, anyone who can see the workflow run can download its artifacts. Keep the retention short, and on public repositories export only runs whose input you trust.
+- **Redaction has limits.** It catches known formats and secrets that are in the environment. A secret that is in neither, such as one written into a file the agent read, or one the model split or encoded some other way, gets through. Treat the files as sensitive.
+- **It is a record, not a verdict.** The export shows what happened in the session; it does not say whether the task was done.
+
+How it differs from the other records:
+
+| Record                             | Where                              | What it holds                                                                                   |
+| ---------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Run summary                        | Job Summary, always                | Counts, tokens and estimated cost only ([what it shows](faq.md#what-does-the-run-summary-show)) |
+| pi Agent Report (`display_report`) | Job Summary                        | The agent's text and each tool call with its result, redacted                                   |
+| Session export (`export_session`)  | Files for your upload step         | The whole session branch, redacted, with placeholders for what was left out                     |
+| Execution file (`execution_file`)  | A file on the runner, not uploaded | pi's raw events, unredacted                                                                     |
 
 ## Structured output
 

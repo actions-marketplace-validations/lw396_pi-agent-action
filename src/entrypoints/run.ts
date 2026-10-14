@@ -33,9 +33,20 @@ import { redactSecrets } from "../github/utils/sanitizer";
 import { collectSecretValues } from "../runner/secret-values";
 import { runPi, RunnerFailure } from "../runner/run-pi";
 import type { RunAudit } from "../runner/run-audit";
+import type { SessionExport } from "../runner/session-export";
 import { readRunnerInputs, runnerOptions } from "../runner/run-plan";
 import { installSkills } from "../runner/skills";
 import { setExecutionFileOutputIfPresent } from "../runner/execution-file";
+
+/** The export_session outputs: only files the export finished. */
+function setSessionExportOutputs(sessionExport: SessionExport | undefined) {
+  if (sessionExport?.jsonl) {
+    core.setOutput("session_jsonl", sessionExport.jsonl);
+  }
+  if (sessionExport?.html) {
+    core.setOutput("session_html", sessionExport.html);
+  }
+}
 
 async function run() {
   // Before anything changes the environment: every redactSecrets() call in
@@ -182,6 +193,7 @@ async function run() {
     agentSuccess = runResult.conclusion === "success";
     executionFile = runResult.executionFile;
     runAudit = runResult.audit;
+    setSessionExportOutputs(runResult.sessionExport);
 
     // Set action-level outputs
     if (runResult.executionFile) {
@@ -196,7 +208,10 @@ async function run() {
     core.setOutput("conclusion", runResult.conclusion);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    if (error instanceof RunnerFailure) runAudit = error.audit;
+    if (error instanceof RunnerFailure) {
+      runAudit = error.audit;
+      setSessionExportOutputs(error.sessionExport);
+    }
     executionFile ??= setExecutionFileOutputIfPresent();
     core.setOutput("conclusion", "failure");
     // Only mark as prepare failure if we haven't completed the prepare phase

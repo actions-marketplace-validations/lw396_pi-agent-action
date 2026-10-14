@@ -202,6 +202,16 @@ inputs:
       action is used solely with trusted input.
     required: false
     default: "false"
+  export_session:
+    description: >-
+      Export the pi session, redacted, as pi's JSONL and an offline HTML page,
+      to the runner's temp directory, outside the checkout. Their paths are
+      the session_jsonl and session_html outputs, for a later
+      actions/upload-artifact step; nothing is uploaded automatically.
+      Redaction is automatic and has limits: on a public repository, anyone
+      who can read the workflow run can download its artifacts.
+    required: false
+    default: "false"
   show_full_output:
     description: "Log every pi event (model responses, tool calls and tool results) as JSON in the job log; a debug rerun does the same. Known secret formats and secret env values are redacted, but WARNING: tool results may still contain secrets or other sensitive information, and these logs are publicly visible in GitHub Actions. Only enable for debugging in non-sensitive environments."
     required: false
@@ -294,6 +304,16 @@ outputs:
   session_id:
     description: "The session ID of the run"
     value: ${{ steps.run.outputs.session_id }}
+  session_jsonl:
+    description: >-
+      With export_session: path to the redacted session as pi's JSONL. Unset
+      when the export failed
+    value: ${{ steps.run.outputs.session_jsonl }}
+  session_html:
+    description: >-
+      With export_session: path to the offline HTML page of the redacted
+      session, made from session_jsonl. Unset when it failed
+    value: ${{ steps.run.outputs.session_html }}
 
 runs:
   using: "composite"
@@ -441,6 +461,7 @@ runs:
 
         # Report settings
         INPUT_SHOW_FULL_OUTPUT: ${{ inputs.show_full_output }}
+        INPUT_EXPORT_SESSION: ${{ inputs.export_session }}
         DISPLAY_REPORT: ${{ inputs.display_report }}
 
     - name: Re-prepend system bin dirs to PATH

@@ -36,6 +36,11 @@ export type RunnerInputs = Required<ModelRuntimeOptions> & {
   allowedBashEnv?: string;
   /** show_full_output, or a debug rerun, which shows everything as in Upstream. */
   showFullOutput: boolean;
+  /**
+   * export_session: only the workflow's own setting, not a debug rerun, since
+   * the export becomes a file a later step may upload.
+   */
+  exportSession: boolean;
 };
 
 /** What a mode adds to the run, besides the workflow's inputs. */
@@ -76,6 +81,7 @@ export function readRunnerInputs(env: NodeJS.ProcessEnv): RunnerInputs {
     // RUNNER_DEBUG is what core.isDebug() reads.
     showFullOutput:
       env.INPUT_SHOW_FULL_OUTPUT === "true" || env.RUNNER_DEBUG === "1",
+    exportSession: env.INPUT_EXPORT_SESSION === "true",
   };
 }
 
@@ -103,6 +109,7 @@ export function runnerOptions(
     isolateBash: inputs.isolateBash,
     allowedBashEnv: inputs.allowedBashEnv,
     showFullOutput: inputs.showFullOutput,
+    exportSession: inputs.exportSession,
     mcpServers: mode.mcpServers,
   };
 }

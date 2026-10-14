@@ -91,6 +91,19 @@ describe("action metadata", () => {
     );
   });
 
+  test("passes export_session to the run step, off by default, with the files as outputs", () => {
+    expect(inputDefault("export_session")).toBe("false");
+    expect(metadata).toContain(
+      "        INPUT_EXPORT_SESSION: ${{ inputs.export_session }}\n",
+    );
+    expect(metadata).toContain(
+      "    value: ${{ steps.run.outputs.session_jsonl }}\n",
+    );
+    expect(metadata).toContain(
+      "    value: ${{ steps.run.outputs.session_html }}\n",
+    );
+  });
+
   test("defaults the triggers and branch prefix to pi branding", () => {
     expect(inputDefault("trigger_phrase")).toBe("@pi");
     expect(inputDefault("label_trigger")).toBe("pi");

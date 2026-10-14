@@ -27,6 +27,7 @@ import {
   type SessionStatsRecord,
 } from "./execution-file";
 import { mcpServerExtensions, type McpServers } from "./mcp-servers";
+import { exportSession, type SessionExport } from "./session-export";
 import {
   createAuditCollector,
   type AuditCollector,
@@ -107,6 +108,11 @@ export type RunnerOptions = ModelRuntimeOptions & {
    * on public repositories.
    */
   showFullOutput?: boolean;
+  /**
+   * The export_session input: once the session ends, export it redacted, as
+   * pi's JSONL and an HTML page, to RUNNER_TEMP/pi-session-export.
+   */
+  exportSession?: boolean;
   /** The action's MCP servers, registered with `direct` exposure. */
   mcpServers?: McpServers;
   /** Working directory of the session. Defaults to process.cwd(). */
@@ -130,7 +136,12 @@ export type RunnerResult = {
   structuredOutput?: string;
   /** What the session did, safe to publish. A failed run throws it in a RunnerFailure. */
   audit: RunAudit;
+  /** The redacted session export, when exportSession is set. */
+  sessionExport?: SessionExport;
 };
+
+/** Where exportSession writes, under RUNNER_TEMP: outside the checkout. */
+const SESSION_EXPORT_DIR = "pi-session-export";
 
 // Streaming deltas: message_end and tool_execution_end carry the final values.
 const OMITTED_EVENTS = new Set<AgentSessionEvent["type"]>([
@@ -333,9 +344,20 @@ export async function runPi(
   const executionFile = await writeExecutionFile(records);
   const sessionId = session.sessionId;
   core.info(`Set session_id: ${sessionId}`);
+  // The in-memory session outlives its AgentSession: no raw copy is written.
+  const sessionExport = options.exportSession
+    ? await exportSession(
+        sessionManager,
+        join(process.env.RUNNER_TEMP || tmpdir(), SESSION_EXPORT_DIR),
+      )
+    : undefined;
 
   if (failure !== undefined) {
-    throw new RunnerFailure(`pi execution failed: ${failure}`, audit);
+    throw new RunnerFailure(
+      `pi execution failed: ${failure}`,
+      audit,
+      sessionExport,
+    );
   }
   return {
     conclusion: "success",
@@ -343,6 +365,7 @@ export async function runPi(
     sessionId,
     structuredOutput: structuredOutput?.output(),
     audit,
+    sessionExport,
   };
 }
 
@@ -362,11 +385,15 @@ function hasCatalogPrices(model: {
   return [input, output, cacheRead, cacheWrite].some((price) => price > 0);
 }
 
-/** A Runner session that failed, with the audit of what it did. */
+/**
+ * A Runner session that failed, with the audit of what it did and, when
+ * exportSession is set, its redacted export.
+ */
 export class RunnerFailure extends Error {
   constructor(
     message: string,
     readonly audit: RunAudit,
+    readonly sessionExport?: SessionExport,
   ) {
     super(message);
     this.name = "RunnerFailure";
