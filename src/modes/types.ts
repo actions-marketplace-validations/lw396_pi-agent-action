@@ -2,6 +2,7 @@ import type { Octokits } from "../github/api/client";
 import type { GitHubContext } from "../github/context";
 import type { BranchInfo } from "../github/operations/branch";
 import type { GitHubTokenSource } from "../github/token";
+import type { WipTarget } from "../github/operations/wip";
 import type { ModeRunSettings } from "../runner/run-plan";
 import type { ToolRule } from "../runner/tool-rules";
 
@@ -23,4 +24,6 @@ export type PrepareResult = ModeRunSettings & {
   /** The tracking comment, which only tag mode creates. */
   commentId?: number;
   branchInfo: BranchInfo;
+  /** Where cleanup saves the agent's unfinished work if the run fails. */
+  wipTarget?: WipTarget;
 };

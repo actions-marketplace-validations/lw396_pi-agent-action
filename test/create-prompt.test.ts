@@ -984,6 +984,42 @@ describe("generatePrompt", () => {
     );
   });
 
+  test("tells the agent to continue the unfinished work on a resumed WIP branch", async () => {
+    const envVars: PreparedContext = {
+      repository: "owner/repo",
+      trackingCommentId: "12345",
+      triggerPhrase: "@pi",
+      resumedWipCommit: "0123456789abcdef",
+      eventData: {
+        eventName: "issue_comment",
+        commentId: "67890",
+        isPR: false,
+        issueNumber: "123",
+        baseBranch: "dev",
+        agentBranch: "pi/issue-123-20240101-1200",
+        commentBody: "@pi continue",
+      },
+    };
+
+    const prompt = await generatePrompt(envVars, mockGitHubData, false, "tag");
+
+    expect(prompt).toContain(
+      "an earlier run on this issue failed, and the action saved what it left in commit 0123456789abcdef",
+    );
+    expect(prompt).toContain(
+      "git log origin/dev..HEAD and git diff origin/dev...HEAD",
+    );
+    expect(prompt).toContain("continue from it instead of starting over");
+
+    const fresh = await generatePrompt(
+      { ...envVars, resumedWipCommit: undefined },
+      mockGitHubData,
+      false,
+      "tag",
+    );
+    expect(fresh).not.toContain("unfinished work");
+  });
+
   test("should use actual branch name for issue comments", async () => {
     const envVars: PreparedContext = {
       repository: "owner/repo",

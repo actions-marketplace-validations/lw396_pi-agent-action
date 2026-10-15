@@ -87,6 +87,17 @@ Not yet. Only the action's own GitHub servers are available; see [MCP servers](.
 
 It cannot push to a closed pull request's branch, so it creates a new one, as it does for issues. On an open pull request it pushes to the pull request's branch.
 
+### What happens to the agent's work when a run fails?
+
+When pi fails, for example because the model provider stays unavailable after the [retries](./configuration.md#retrying-model-errors), the action commits what the agent left in the checkout and pushes it, before it updates the comment. The comment says where the work went.
+
+- On an issue or a closed pull request the work goes to the branch the action created, in a commit whose message starts with `WIP:` and ends with a `Pi-Agent-Wip: issue #<number>` trailer, even when the agent had committed everything already. The next `@pi` on the same issue finds that branch and continues on it: the agent is told the branch holds unfinished work and to check what is done first. The branch is resumed only while its newest commit is that WIP commit. Once a resumed run pushes commits, or ends without an error and without pushing (it only checked the work, or reported a blocker), the WIP is over: in the second case the action pushes an empty `chore: close unfinished work` commit on top. The next `@pi` on the issue then starts a new branch. If several WIP branches exist for an issue, the one with the newest WIP commit is resumed; the others are left as they are. Squash-merging the pull request keeps the WIP commits out of the base branch's history.
+- On an open pull request the work goes to the pull request's branch, without the trailer: the next run uses that branch anyway.
+
+The push is never forced, skips the repository's git hooks, and leaves out changes under `.github/workflows/` (the app token cannot push them) and untracked files that earlier workflow steps wrote before the agent started, such as a generated config. Nothing is saved for pull requests from forks, which the action cannot push to, or with `use_commit_signing`, whose commits go through the API. A job cancelled or stopped by `timeout-minutes` ends before cleanup, so its work is not saved either. With `branch_name_template`, a resumed branch is found only if the template contains `{{entityNumber}}`.
+
+As on pull requests, a resumed branch's `.pi/`, `AGENTS.md` and similar files are replaced with the base branch's versions before the agent starts, since an earlier run wrote them.
+
 ### Why is the git history shallow?
 
 `actions/checkout` fetches one commit by default. On pull requests the action deepens the fetch to cover the pull request's commits. For full history, check out with `fetch-depth: 0`:

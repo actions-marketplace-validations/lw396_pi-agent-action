@@ -69,6 +69,23 @@ describe("updateCommentBody", () => {
     });
   });
 
+  describe("unfinished work note", () => {
+    it("puts the note under the failure header, above the model's report", () => {
+      const note =
+        "Unfinished work was saved to `pi/issue-1-x` in [abc1234](https://github.com/owner/repo/commit/abc1234).";
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: "pi is working…\n\n### Progress\n- [ ] Step",
+        actionFailed: true,
+        wipNote: note,
+      });
+
+      expect(result).toBe(
+        `**pi encountered an error** —— [View job](https://github.com/owner/repo/actions/runs/123)\n\n${note}\n\n---\n### Progress\n- [ ] Step`,
+      );
+    });
+  });
+
   describe("spinner left by the model", () => {
     const spinner =
       '<img src="https://raw.githubusercontent.com/lw396/pi-agent-action/main/assets/spinner.gif" width="14px" height="14px" style="vertical-align: middle; margin-left: 4px;" />';

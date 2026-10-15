@@ -26,6 +26,14 @@ import { prepareAgentMode } from "../modes/agent";
 import { checkContainsTrigger } from "../github/validation/trigger";
 import { restoreConfigFromBase } from "../github/operations/restore-config";
 import { validateBranchName } from "../github/operations/branch";
+import {
+  closeResumedWip,
+  saveUnfinishedWork,
+  wipCommentNote,
+  type WipSaveResult,
+  type WipTarget,
+} from "../github/operations/wip";
+import { GITHUB_SERVER_URL } from "../github/api/config";
 import { assertNoRemovedInputs } from "./removed-inputs";
 import { updateCommentLink } from "./update-comment-link";
 import { writeJobSummary } from "./job-summary";
@@ -70,6 +78,11 @@ async function run() {
   // Paths reverted to the PR base branch, which cleanup must not commit back
   // onto the PR author's branch. Empty unless restoreConfigFromBase ran.
   let restoredConfigPaths: string[] = [];
+  // Where a failed run saves the agent's unfinished work (tag mode only).
+  let wipTarget: WipTarget | undefined;
+  let wipResult: WipSaveResult | undefined;
+  // The WIP commit this run resumed, closed if the run succeeds.
+  let resumedWip: { branch: string; sha: string } | undefined;
   // Track whether we've completed prepare phase, so we can attribute errors correctly
   let prepareCompleted = false;
   try {
@@ -154,6 +167,13 @@ async function run() {
     commentId = prepareResult.commentId;
     agentBranch = prepareResult.branchInfo.agentBranch;
     baseBranch = prepareResult.branchInfo.baseBranch;
+    wipTarget = prepareResult.wipTarget;
+    if (agentBranch && prepareResult.branchInfo.resumedWip) {
+      resumedWip = {
+        branch: agentBranch,
+        sha: prepareResult.branchInfo.resumedWip.sha,
+      };
+    }
     // Outside the checkout, so they are never committed with the agent's changes.
     const skillsDir = await installSkills(runnerInputs.skills);
     prepareCompleted = true;
@@ -169,7 +189,13 @@ async function run() {
     // lacks base.ref, so we fall back to the mode-provided value — tag mode
     // fetches it from GraphQL; agent mode on issue_comment is an edge case
     // that at worst restores from the wrong trusted branch (still secure).
-    if (isEntityContext(context) && context.isPR) {
+    //
+    // A resumed WIP branch (operations/wip.ts) gets the same treatment: an
+    // earlier run wrote it, and that run's agent read untrusted GitHub content.
+    if (
+      isEntityContext(context) &&
+      (context.isPR || prepareResult.branchInfo.resumedWip)
+    ) {
       let restoreBase = baseBranch;
       if (
         isPullRequestEvent(context) ||
@@ -223,6 +249,20 @@ async function run() {
   } finally {
     // Phase 3: Cleanup (always runs)
 
+    // Before the comment update, so it links the branch the work went to.
+    const runUrl = `${GITHUB_SERVER_URL}/${context?.repository.full_name}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+    if (runnerStarted && !agentSuccess && wipTarget) {
+      wipResult = saveUnfinishedWork(wipTarget, {
+        runUrl,
+        excludePaths: restoredConfigPaths,
+      });
+    }
+    // A resumed run that succeeded ends the WIP, so the next request on the
+    // issue does not resume it again.
+    if (agentSuccess && resumedWip) {
+      closeResumedWip(resumedWip.branch, resumedWip.sha, runUrl);
+    }
+
     // Update tracking comment
     if (
       commentId &&
@@ -246,6 +286,12 @@ async function run() {
           prepareError,
           useCommitSigning: context.inputs.useCommitSigning,
           restoredConfigPaths,
+          wipNote: wipCommentNote(
+            wipResult,
+            context.repository.owner,
+            context.repository.repo,
+            context.inputs.triggerPhrase,
+          ),
         });
       } catch (error) {
         console.error("Error updating comment with job link:", error);
