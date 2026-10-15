@@ -13,6 +13,8 @@ export type RunnerInputs = Required<ModelRuntimeOptions> & {
   model?: string;
   apiKey?: string;
   piArgs?: string;
+  /** The max_retries input: pi's retry.maxRetries for transient model errors. */
+  maxRetries: number;
   /** The allowed_tools input, which also decides the action's MCP servers. */
   allowedTools: ToolRule[];
   disallowedTools: ToolRule[];
@@ -55,6 +57,24 @@ export type ModeRunSettings = {
   mcpServers: McpServers;
 };
 
+/** The max_retries default, also declared in action.yml. */
+export const DEFAULT_MAX_RETRIES = 10;
+
+/**
+ * The max_retries input: a whole number of retries, at least 0. Empty uses
+ * the default; anything else fails the run before it is prepared.
+ */
+export function parseMaxRetries(value: string | undefined): number {
+  const text = value?.trim() ?? "";
+  if (text === "") return DEFAULT_MAX_RETRIES;
+  if (!/^\d+$/.test(text)) {
+    throw new Error(
+      `max_retries must be a whole number of retries, 0 or more (got: ${JSON.stringify(value)})`,
+    );
+  }
+  return Number(text);
+}
+
 /**
  * Read the Runner's inputs. Throws on a tool rule the action cannot enforce
  * as written, or an invalid skills/packages line, so the run fails before
@@ -67,6 +87,7 @@ export function readRunnerInputs(env: NodeJS.ProcessEnv): RunnerInputs {
     apiKey: env.API_KEY,
     baseUrls: readBaseUrls(env),
     piArgs: env.PI_ARGS,
+    maxRetries: parseMaxRetries(env.INPUT_MAX_RETRIES),
     allowedTools: parseToolRules(env.INPUT_ALLOWED_TOOLS, "allowed_tools"),
     disallowedTools: parseToolRules(
       env.INPUT_DISALLOWED_TOOLS,
@@ -96,6 +117,7 @@ export function runnerOptions(
     apiKey: inputs.apiKey,
     baseUrls: inputs.baseUrls,
     piArgs: inputs.piArgs,
+    maxRetries: inputs.maxRetries,
     packages: inputs.packages,
     // The mode's own rules come first, then the workflow's allowed_tools.
     allowedTools: [

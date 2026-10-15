@@ -233,6 +233,15 @@ with:
   exclude_comments_by_actor: "*[bot]" # leave bot comments out of the prompt
 ```
 
+## Retrying model errors
+
+pi retries a model request that failed with a transient error: overload, rate limit, a 5xx status or a dropped connection. The wait doubles from 2 seconds up to 60 seconds between attempts. The action sets 10 retries (pi's own default is 3), about 6 minutes in all, so a long run survives a short provider or proxy outage. Errors that will not go away, such as an exhausted quota, are not retried.
+
+```yaml
+with:
+  max_retries: 20 # about 16 minutes of outage; 0 disables retries
+```
+
 ## Limiting time and cost
 
 There is no turn limit. Bound a run with the job's `timeout-minutes`, keep `allowed_tools` narrow, and pick a cheaper model for routine jobs. The run summary in the Job Summary shows each run's tokens and estimated cost, and the `execution_file` output has the full record.

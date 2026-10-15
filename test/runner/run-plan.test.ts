@@ -21,6 +21,7 @@ describe("readRunnerInputs", () => {
       API_KEY: "key",
       OPENAI_BASE_URL: " https://proxy.example.com/prefix/v1/ ",
       PI_ARGS: "--thinking high",
+      INPUT_MAX_RETRIES: "5",
       INPUT_ALLOWED_TOOLS: "Bash(npm test)",
       INPUT_DISALLOWED_TOOLS: "Write",
       JSON_SCHEMA: '{"type":"object"}',
@@ -34,6 +35,7 @@ describe("readRunnerInputs", () => {
       apiKey: "key",
       baseUrls: { openai: "https://proxy.example.com/prefix/v1" },
       piArgs: "--thinking high",
+      maxRetries: 5,
       allowedTools: [
         { text: "Bash(npm test)", tool: "bash", pattern: "npm test" },
       ],
@@ -48,6 +50,28 @@ describe("readRunnerInputs", () => {
       exportSession: true,
     });
   });
+
+  test.each([undefined, "", "  "])(
+    "defaults max_retries to 10 when it is empty: %p",
+    (value) => {
+      expect(readRunnerInputs({ INPUT_MAX_RETRIES: value }).maxRetries).toBe(
+        10,
+      );
+    },
+  );
+
+  test("accepts 0 max_retries, which disables retries", () => {
+    expect(readRunnerInputs({ INPUT_MAX_RETRIES: "0" }).maxRetries).toBe(0);
+  });
+
+  test.each(["-1", "2.5", "ten", "3 retries"])(
+    "fails on a max_retries that is not a whole number: %p",
+    (value) => {
+      expect(() => readRunnerInputs({ INPUT_MAX_RETRIES: value })).toThrow(
+        "max_retries must be a whole number of retries",
+      );
+    },
+  );
 
   test.each([undefined, "", "   "])(
     "ignores an empty OPENAI_BASE_URL: %p",
@@ -241,12 +265,14 @@ describe("runnerOptions", () => {
         OPENAI_BASE_URL: "https://proxy.example.com/v1",
         ALLOWED_NON_WRITE_USERS: "*",
         INPUT_SHOW_FULL_OUTPUT: "true",
+        INPUT_MAX_RETRIES: "4",
       }),
       NO_MODE_SETTINGS,
     );
 
     expect(options).toMatchObject({
       model: "openai/gpt-5",
+      maxRetries: 4,
       baseUrls: { openai: "https://proxy.example.com/v1" },
       isolateBash: true,
       showFullOutput: true,
