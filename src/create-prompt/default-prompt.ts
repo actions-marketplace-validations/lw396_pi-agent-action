@@ -52,6 +52,8 @@ function publishInstructions(
 
   return [
     `The action has already checked out ${branch}; publish your changes there. Do not create or switch branches, merge, rebase, or force-push.`,
+    context.resumedWipCommit &&
+      `This branch holds unfinished work: an earlier run on this ${eventData.isPR ? "pull request" : "issue"} failed, and the action saved what it left in commit ${context.resumedWipCommit}, whose message starts with "WIP:". For implementation requests, first see what is already done with git log origin/${eventData.baseBranch}..HEAD and git diff origin/${eventData.baseBranch}...HEAD, then continue from it instead of starting over. The saved work may not build or pass tests; check it before you rely on it.`,
     useCommitSigning
       ? `Edit files locally, then commit and push them in one step with mcp__github_file_ops__commit_files, which reads the listed paths from disk. Delete files with mcp__github_file_ops__delete_files. Example payloads:
   - mcp__github_file_ops__commit_files: {"files": ["path/to/file1.js", "path/to/file2.py"], "message": "feat: add new feature"}

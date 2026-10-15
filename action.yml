@@ -86,6 +86,15 @@ inputs:
     description: "Additional pi command-line flags. Supported: --thinking, --system-prompt, --append-system-prompt, --tools, --exclude-tools, --no-tools, --no-builtin-tools, --no-skills, --no-prompt-templates, --no-context-files. Any other flag fails the run."
     required: false
     default: ""
+  max_retries:
+    description: >-
+      How many times pi retries a model request that failed with a transient
+      error (overload, rate limit, 5xx, network), pi's retry.maxRetries
+      setting. Waits double from 2 seconds up to 60 seconds between attempts,
+      so 10 retries cover about 6 minutes of provider outage. 0 disables
+      retries.
+    required: false
+    default: "10"
   skills:
     description: >-
       Agent skills to install with gh skill install, one per line:
@@ -451,6 +460,7 @@ runs:
         MODEL: ${{ inputs.model }}
         API_KEY: ${{ inputs.api_key }}
         PI_ARGS: ${{ inputs.pi_args }}
+        INPUT_MAX_RETRIES: ${{ inputs.max_retries }}
         INPUT_SKILLS: ${{ inputs.skills }}
         INPUT_PACKAGES: ${{ inputs.packages }}
         INPUT_ALLOWED_TOOLS: ${{ inputs.allowed_tools }}

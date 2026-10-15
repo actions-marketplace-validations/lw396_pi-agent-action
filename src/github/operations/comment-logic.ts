@@ -34,6 +34,8 @@ export type CommentUpdateInput = {
   branchName?: string;
   triggerUsername?: string;
   errorDetails?: string;
+  /** Where a failed run's unfinished work was saved, shown under the header. */
+  wipNote?: string;
 };
 
 export function ensureProperlyEncodedUrl(url: string): string | null {
@@ -95,6 +97,7 @@ export function updateCommentBody(input: CommentUpdateInput): string {
     branchName,
     triggerUsername,
     errorDetails,
+    wipNote,
   } = input;
 
   // Extract content from the original comment body
@@ -209,6 +212,10 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // secrets, so redact known formats before posting.
   if (actionFailed && errorDetails) {
     newBody += `\n\n\`\`\`\n${redactSecrets(errorDetails)}\n\`\`\``;
+  }
+
+  if (wipNote) {
+    newBody += `\n\n${wipNote}`;
   }
 
   newBody += `\n\n---\n`;

@@ -120,4 +120,9 @@ export type PreparedContext = CommonFields & {
    * fake one. createPrompt sets a new one per run; unset, tags carry no id.
    */
   contentTagId?: string;
+  /**
+   * The WIP commit at the tip of the checked-out branch, when the run resumes
+   * unfinished work an earlier failed run saved (operations/wip.ts).
+   */
+  resumedWipCommit?: string;
 };

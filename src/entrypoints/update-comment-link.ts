@@ -52,6 +52,8 @@ export type UpdateCommentLinkParams = {
    * commits the revert onto the PR author's branch.
    */
   restoredConfigPaths?: string[];
+  /** What happened to a failed run's unfinished work, for the comment. */
+  wipNote?: string;
 };
 
 export async function updateCommentLink(
@@ -228,6 +230,7 @@ export async function updateCommentLink(
     branchName: shouldDeleteBranch || !branchLink ? undefined : agentBranch,
     triggerUsername,
     errorDetails,
+    wipNote: params.wipNote,
   };
 
   const updatedBody = updateCommentBody(commentInput);

@@ -175,6 +175,43 @@ describe("runPi", () => {
     expect(assistantEnd?.message.stopReason).toBe("error");
   });
 
+  test("retries a transient model error up to maxRetries times", async () => {
+    const unavailable = () =>
+      fauxAssistantMessage("", {
+        stopReason: "error",
+        errorMessage: "503 service unavailable",
+      });
+
+    // No retries: the first 503 ends the run.
+    const noRetry = await fauxRuntime([
+      unavailable(),
+      fauxAssistantMessage("Done."),
+    ]);
+    await expect(
+      runPi("Say you are done.", {
+        model: noRetry.model,
+        modelRuntime: noRetry.modelRuntime,
+        cwd: getScratch().cwd,
+        maxRetries: 0,
+      }),
+    ).rejects.toThrow("503 service unavailable");
+    expect(noRetry.faux.state.callCount).toBe(1);
+
+    // One retry (after pi's 2 second backoff) gets past it.
+    const oneRetry = await fauxRuntime([
+      unavailable(),
+      fauxAssistantMessage("Done."),
+    ]);
+    const result = await runPi("Say you are done.", {
+      model: oneRetry.model,
+      modelRuntime: oneRetry.modelRuntime,
+      cwd: getScratch().cwd,
+      maxRetries: 1,
+    });
+    expect(result.conclusion).toBe("success");
+    expect(oneRetry.faux.state.callCount).toBe(2);
+  }, 15_000);
+
   test("refuses to run without a model", async () => {
     const { faux, modelRuntime } = await fauxRuntime([
       fauxAssistantMessage("unused"),

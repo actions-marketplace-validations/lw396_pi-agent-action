@@ -61,6 +61,12 @@ export type RunnerOptions = ModelRuntimeOptions & {
   /** The pi_args input: pi's own command-line flags, a supported subset. */
   piArgs?: string;
   /**
+   * The max_retries input: pi's retry.maxRetries, how often pi retries a
+   * model request that failed with a transient error. Unset keeps pi's
+   * default.
+   */
+  maxRetries?: number;
+  /**
    * The allowed_tools input, plus the mode's own rules. Calls to tools other
    * than the read-only ones must match a rule.
    */
@@ -226,7 +232,11 @@ export async function runPi(
   // (docs/development/upstream-divergence.md). Pass every setting here at
   // once: values applied afterwards with applyOverrides() are lost on reload
   // (test/pi-sdk/settings.test.ts).
-  const settingsManager = SettingsManager.inMemory({});
+  const settingsManager = SettingsManager.inMemory(
+    options.maxRetries === undefined
+      ? {}
+      : { retry: { maxRetries: options.maxRetries } },
+  );
   const packagePaths = await resolvePackages(
     options.packages ?? [],
     cwd,

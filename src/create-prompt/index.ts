@@ -114,10 +114,12 @@ export function createPrompt(
   githubData: FetchDataResult,
   context: ParsedGitHubContext,
   githubTokenSource?: GitHubTokenSource,
+  resumedWipCommit?: string,
 ): { prompt: string; userRequest?: string } {
   const preparedContext: PreparedContext = {
     ...prepareContext(context, commentId.toString(), baseBranch, agentBranch),
     githubTokenSource,
+    resumedWipCommit,
     // New each run, so content written before the run cannot know it.
     contentTagId: randomBytes(6).toString("hex"),
   };
