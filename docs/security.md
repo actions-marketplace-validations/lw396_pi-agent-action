@@ -43,6 +43,16 @@ pi-agent-action keeps claude-code-action's access checks, token handling and pro
 
 Allow only the tools the job needs, keep workflow `permissions:` minimal, and where you can, run the job on a runner that filters outbound network traffic.
 
+## Package trust
+
+The `packages` input opts into third-party code with the action's operating-system permissions. pi extensions run in-process with access to the provider keys, GitHub token, files and network. Dependency installation may execute lifecycle scripts with the job's environment.
+
+`allowed_tools` and `disallowed_tools` govern calls through pi's tool runtime, including package tools. They do **not** sandbox extension factories, event handlers, direct filesystem/network access or child processes an extension starts. Bash isolation applies only to the action's bash tool, not arbitrary extension code.
+
+Review packages and their dependencies before enabling them. Pin npm versions and Git commit hashes, and set sources only in trusted workflow configuration: never interpolate issue/PR text or model output into `packages`. Installation outside the checkout prevents accidental commits, not code execution. Retain minimal job permissions, narrow tool rules and the egress firewall. Source URLs must not contain credentials; configure npm/Git authentication separately in trusted steps.
+
+See [Pi packages](./configuration.md#pi-packages) for supported sources and failure behavior.
+
 ## Bash isolation (`allowed_non_write_users`)
 
 When `allowed_non_write_users` is set, bash commands are isolated. Without it, bash commands see the agent's whole environment, including the provider key and `GH_TOKEN`, as in claude-code-action.
@@ -83,7 +93,9 @@ Set `subprocess_isolation: false` to turn off both the allowlist and the sandbox
 
 ## Output redaction
 
-Comments, the step summary, error messages and the full output log are redacted before they are published:
+Comments, the pi Agent Report (`display_report`), error messages and the full output log are redacted before they are published. The run summary that is always written to the Job Summary does not need redaction: it holds only counts, token usage, cost and fixed labels, and no text from the model, tools or repository.
+
+Redaction works as follows:
 
 - Known token formats are matched by pattern: GitHub, Anthropic, OpenAI, OpenRouter, Google, AWS, Slack and JWTs.
 - Every environment value of 16 characters or more is treated as a secret and replaced with `[REDACTED]`, raw, base64-encoded or URL-encoded, unless it is the value of a variable on the bash allowlist, one of the action's own settings that are not credentials (such as `prompt` and `model`; `pi_args` is still treated as a secret), or an existing file system path. This covers keys of providers with no known format.
@@ -241,6 +253,12 @@ env:
   OPENAI_API_KEY: "sk-..." # Exposed and vulnerable!
 ```
 
+### Custom model endpoints
+
+`OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL` send that provider's requests, prompts, tool definitions and API key to the configured endpoint. Set them only in trusted workflow configuration; never derive it from an issue, pull request or model output. Use HTTPS for remote endpoints, keep the endpoint's API key in GitHub Secrets, and restrict any management interface separately. Embedded URL credentials, query strings and fragments are rejected; pass credentials through the provider's key variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`) or `api_key` instead. Never point `ANTHROPIC_BASE_URL` at a third party while the workflow supplies a Claude subscription OAuth token.
+
+If a gateway uses OAuth for upstream access, keep its access and refresh tokens on the gateway host with persistent storage. Give the action only the gateway's API key. Keep the exact endpoint host on the egress allowlist and retain tool permissions and subprocess isolation; the endpoint override does not provide any additional sandboxing.
+
 ## Full Output Security Warning
 
 The `show_full_output` option is **disabled by default** for security reasons. When enabled, it logs every pi event — model responses, tool calls and tool results — including:
@@ -264,6 +282,10 @@ Only enable `show_full_output: true` or debug logging when:
 - You have verified no secrets will be exposed in the output
 - You understand the security implications
 
+### Session export
+
+`export_session` is also **disabled by default**. It writes the redacted session to files, for a later step to upload as an artifact; the action itself uploads nothing. The export goes further than [Output redaction](#output-redaction): it also redacts short values of variables named like a credential, and leaves out images, signatures and tool and extension data. It still holds every tool result, and on a public repository anyone who can see the run can download its artifacts. Enable it only for runs whose input you trust, and keep the artifact's retention short. See [Exporting the session](usage.md#exporting-the-session).
+
 ### Recommended Practice
 
-For debugging, prefer `show_full_output: false` (the default), which logs only the run's token and cost totals. The step summary (`display_report: true`) shows tool calls and their results too, so it carries the same risks.
+For debugging, prefer `show_full_output: false` (the default), which logs only the run's token and cost totals, and the run summary in the Job Summary, which adds counts of responses, tool calls, failures and denials. The pi Agent Report (`display_report: true`) shows tool calls and their results too, so it carries the same risks as full output.

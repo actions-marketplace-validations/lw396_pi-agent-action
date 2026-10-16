@@ -98,6 +98,20 @@ describe("Tag Mode", () => {
       expect(replaceCheckoutCredentialsSpy).not.toHaveBeenCalled();
     });
 
+    test("passes the token source to the prompt", async () => {
+      await prepareTagMode({
+        context: { ...mockIssueCommentContext },
+        octokit: {} as any,
+        githubToken: "test-token",
+        githubTokenSource: "app",
+        allowedTools: [],
+        untrustedInput: false,
+      });
+
+      const calls = (createPrompt.createPrompt as any).mock.calls;
+      expect(calls.at(-1)?.[5]).toBe("app");
+    });
+
     test("hashes the changed files after checking out the PR's branch", async () => {
       const calls: string[] = [];
       const setupBranchSpy = spyOn(branch, "setupBranch").mockImplementation(
@@ -126,6 +140,34 @@ describe("Tag Mode", () => {
       }
 
       expect(calls).toEqual(["setupBranch", "hashChangedFiles"]);
+    });
+
+    // With actions/checkout's persist-credentials: false, the branch setup's
+    // git fetch of a private repository has only the action's token.
+    test("configures git auth before setting up the branch", async () => {
+      const calls: string[] = [];
+      configureGitAuthSpy.mockImplementation(async () => {
+        calls.push("configureGitAuth");
+      });
+      const setupBranchSpy = spyOn(branch, "setupBranch").mockImplementation(
+        async () => {
+          calls.push("setupBranch");
+          return { baseBranch: "main", currentBranch: "feature" } as any;
+        },
+      );
+      try {
+        await prepareTagMode({
+          context: { ...mockIssueCommentContext },
+          octokit: {} as any,
+          githubToken: "test-token",
+          allowedTools: [],
+          untrustedInput: false,
+        });
+      } finally {
+        setupBranchSpy.mockRestore();
+      }
+
+      expect(calls).toEqual(["configureGitAuth", "setupBranch"]);
     });
 
     test("still replaces the checkout credential when API commit signing is enabled", async () => {

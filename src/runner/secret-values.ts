@@ -53,13 +53,16 @@ export const ACTION_SETTINGS_ENV: readonly string[] = [
   "ADDITIONAL_PERMISSIONS",
   "MODEL",
   "CLASSIFY_MODEL",
+  "INPUT_MAX_RETRIES",
   "INPUT_SKILLS",
+  "INPUT_PACKAGES",
   "INPUT_ALLOWED_TOOLS",
   "INPUT_DISALLOWED_TOOLS",
   "JSON_SCHEMA",
   "SUBPROCESS_ISOLATION",
   "ALLOWED_BASH_ENV",
   "INPUT_SHOW_FULL_OUTPUT",
+  "INPUT_EXPORT_SESSION",
   "DISPLAY_REPORT",
   // The buffered inline comment post-step
   "REPO_OWNER",
@@ -138,16 +141,26 @@ export function collectSecretValues(env: NodeJS.ProcessEnv): void {
   const allowlisted = new Set(
     BASH_ENV_ALLOWLIST.map((name) => env[name]).filter(Boolean),
   );
-  const values = Object.entries(env)
-    .filter(([name]) => !NOT_SECRET_NAMES.has(name))
-    .map(([, value]) => value)
-    .filter(
-      (value): value is string =>
-        value !== undefined &&
-        value.length >= MIN_SECRET_LENGTH &&
-        !allowlisted.has(value) &&
-        !isExistingPathList(value),
-    );
+  const candidates = (minLength: number, named: boolean) =>
+    Object.entries(env)
+      .filter(
+        ([name]) =>
+          !NOT_SECRET_NAMES.has(name) && (!named || hasSecretName(name)),
+      )
+      .map(([, value]) => value)
+      .filter(
+        (value): value is string =>
+          value !== undefined &&
+          value.length >= minLength &&
+          !allowlisted.has(value) &&
+          !isExistingPathList(value),
+      );
+  secretForms = formsOf(candidates(MIN_SECRET_LENGTH, false));
+  namedSecretForms = formsOf(candidates(MIN_NAMED_SECRET_LENGTH, true));
+}
+
+/** Every form of the values to replace, longest first. */
+function formsOf(values: string[]): string[] {
   const forms = new Set(
     values.flatMap((value) => [
       value,
@@ -155,7 +168,52 @@ export function collectSecretValues(env: NodeJS.ProcessEnv): void {
       ...base64Forms(value),
     ]),
   );
-  secretForms = [...forms].sort((a, b) => b.length - a.length);
+  return [...forms].sort((a, b) => b.length - a.length);
+}
+
+/**
+ * The session export (src/runner/session-export.ts) also redacts shorter
+ * values of variables named like a credential: a value that short is too
+ * common to redact everywhere, but the export holds every tool result, so a
+ * short key echoed by a command would otherwise be published.
+ */
+const MIN_NAMED_SECRET_LENGTH = 6;
+
+const SECRET_NAME_PARTS = new Set([
+  "KEY",
+  "KEYS",
+  "APIKEY",
+  "TOKEN",
+  "TOKENS",
+  "SECRET",
+  "SECRETS",
+  "PASSWORD",
+  "PASSWD",
+  "PASS",
+  "CREDENTIAL",
+  "CREDENTIALS",
+  "AUTH",
+]);
+
+let namedSecretForms: string[] = [];
+
+function hasSecretName(name: string): boolean {
+  return name
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .some((part) => SECRET_NAME_PARTS.has(part));
+}
+
+/**
+ * Replace every form of the values of variables named like a credential,
+ * however short (down to MIN_NAMED_SECRET_LENGTH), with [REDACTED]. For the
+ * session export, on top of redactSecrets().
+ */
+export function redactNamedSecretValues(content: string): string {
+  for (const form of namedSecretForms) {
+    content = content.replaceAll(form, REDACTED);
+  }
+  return content;
 }
 
 /** Replace every form of the collected secret values with [REDACTED]. */

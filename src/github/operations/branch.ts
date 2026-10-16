@@ -14,6 +14,7 @@ import type { Octokits } from "../api/client";
 import type { FetchedGitHubData } from "../data/fetcher";
 import { generateBranchName } from "../../utils/branch-template";
 import { fetchDepthArgs } from "./fetch-depth";
+import { findResumableWipBranch } from "./wip";
 
 /**
  * Extracts the first label from GitHub data, or returns undefined if no labels exist
@@ -150,6 +151,13 @@ export type BranchInfo = {
   baseBranch: string;
   agentBranch?: string;
   currentBranch: string;
+  /** An open pull request from a fork, whose branch origin cannot push to. */
+  forkPullRequest?: boolean;
+  /**
+   * agentBranch holds unfinished work an earlier failed run saved (see
+   * wip.ts), checked out to continue; sha is its WIP commit.
+   */
+  resumedWip?: { sha: string };
 };
 
 export async function setupBranch(
@@ -224,6 +232,7 @@ export async function setupBranch(
       return {
         baseBranch,
         currentBranch: branchName,
+        forkPullRequest: prData.isCrossRepository,
       };
     }
   }
@@ -245,6 +254,46 @@ export async function setupBranch(
 
   // Generate branch name for either an issue or closed/merged PR
   const entityType = isPR ? "pr" : "issue";
+
+  // Continue the unfinished work a failed run saved, rather than start over.
+  // Not with commit signing, whose commits go through the API: a failed run
+  // saves no WIP commit there.
+  if (!context.inputs.useCommitSigning) {
+    const wip = await findResumableWipBranch(octokits, {
+      owner,
+      repo,
+      entity: { type: entityType, number: entityNumber },
+      branchPrefix,
+      branchNameTemplate,
+    });
+    if (wip) {
+      validateBranchName(wip.branch);
+      validateBranchName(sourceBranch);
+      console.log(
+        `Resuming unfinished work from a failed run on ${wip.branch} (${wip.sha})`,
+      );
+      // The base branch too, so the agent can compare against origin/<base>.
+      execGit(["fetch", "origin", sourceBranch, ...fetchDepthArgs(1)]);
+      execGit([
+        "fetch",
+        "origin",
+        ...fetchDepthArgs(50),
+        `+refs/heads/${wip.branch}:refs/remotes/origin/${wip.branch}`,
+      ]);
+      execGit([
+        "checkout",
+        "-B",
+        wip.branch,
+        `refs/remotes/origin/${wip.branch}`,
+      ]);
+      return {
+        baseBranch: sourceBranch,
+        agentBranch: wip.branch,
+        currentBranch: wip.branch,
+        resumedWip: { sha: wip.sha },
+      };
+    }
+  }
 
   // Get the SHA of the source branch to use in template
   let sourceSHA: string | undefined;

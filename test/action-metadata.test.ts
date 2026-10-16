@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { REMOVED_INPUTS } from "../src/entrypoints/removed-inputs";
 import { APP_BOT_ID, APP_BOT_LOGIN } from "../src/github/constants";
+import { DEFAULT_MAX_RETRIES } from "../src/runner/run-plan";
 
 const metadata = readFileSync(
   new URL("../action.yml", import.meta.url),
@@ -51,6 +52,13 @@ describe("action metadata", () => {
     expect(metadata).toContain("        PI_ARGS: ${{ inputs.pi_args }}\n");
   });
 
+  test("passes the max_retries input to the run step, defaulting to 10", () => {
+    expect(inputDefault("max_retries")).toBe(String(DEFAULT_MAX_RETRIES));
+    expect(metadata).toContain(
+      "        INPUT_MAX_RETRIES: ${{ inputs.max_retries }}\n",
+    );
+  });
+
   test("passes the allowed_tools and disallowed_tools inputs to the run step", () => {
     expect(inputDefault("allowed_tools")).toBe("");
     expect(inputDefault("disallowed_tools")).toBe("");
@@ -88,6 +96,19 @@ describe("action metadata", () => {
     expect(inputDefault("show_full_output")).toBe("false");
     expect(metadata).toContain(
       "        INPUT_SHOW_FULL_OUTPUT: ${{ inputs.show_full_output }}\n",
+    );
+  });
+
+  test("passes export_session to the run step, off by default, with the files as outputs", () => {
+    expect(inputDefault("export_session")).toBe("false");
+    expect(metadata).toContain(
+      "        INPUT_EXPORT_SESSION: ${{ inputs.export_session }}\n",
+    );
+    expect(metadata).toContain(
+      "    value: ${{ steps.run.outputs.session_jsonl }}\n",
+    );
+    expect(metadata).toContain(
+      "    value: ${{ steps.run.outputs.session_html }}\n",
     );
   });
 

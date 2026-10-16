@@ -139,7 +139,7 @@ describe("pull_request_target event support", () => {
       // Should include git commands for non-commit-signing mode
       expect(prompt).toContain("scripts/git-push.sh origin");
       expect(prompt).toContain(
-        "Always push to the existing branch when triggered on a PR",
+        "The action has already checked out the pull request's branch",
       );
       expect(prompt).toContain("mcp__github_comment__update_comment");
 
@@ -168,7 +168,7 @@ describe("pull_request_target event support", () => {
       expect(prompt).toContain("mcp__github_comment__update_comment");
 
       // Should not include git command instructions
-      expect(prompt).not.toContain("Use git commands via the Bash tool");
+      expect(prompt).not.toContain("Stage with git add");
     });
 
     test("should treat pull_request_target same as pull_request in prompt generation", () => {
@@ -236,10 +236,10 @@ describe("pull_request_target event support", () => {
 
       // Both should contain PR-specific instructions
       expect(pullRequestPrompt).toContain(
-        "Always push to the existing branch when triggered on a PR",
+        "The action has already checked out the pull request's branch",
       );
       expect(pullRequestTargetPrompt).toContain(
-        "Always push to the existing branch when triggered on a PR",
+        "The action has already checked out the pull request's branch",
       );
     });
 
@@ -283,7 +283,7 @@ describe("pull_request_target event support", () => {
       expect(prompt).toContain("<event_type>PULL_REQUEST</event_type>");
       expect(prompt).toContain("<pr_number>456</pr_number>");
       expect(prompt).toContain(
-        "Always push to the existing branch when triggered on a PR",
+        "The action has already checked out the pull request's branch",
       );
     });
   });
@@ -422,11 +422,11 @@ describe("pull_request_target event support", () => {
       // Should have same branch handling instructions
       expect(
         internalPrompt.includes(
-          "Always push to the existing branch when triggered on a PR",
+          "The action has already checked out the pull request's branch",
         ),
       ).toBe(
         externalPrompt.includes(
-          "Always push to the existing branch when triggered on a PR",
+          "The action has already checked out the pull request's branch",
         ),
       );
     });

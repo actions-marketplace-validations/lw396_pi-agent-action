@@ -87,6 +87,17 @@ Not yet. Only the action's own GitHub servers are available; see [MCP servers](.
 
 It cannot push to a closed pull request's branch, so it creates a new one, as it does for issues. On an open pull request it pushes to the pull request's branch.
 
+### What happens to the agent's work when a run fails?
+
+When pi fails, for example because the model provider stays unavailable after the [retries](./configuration.md#retrying-model-errors), the action commits what the agent left in the checkout and pushes it, before it updates the comment. The comment says where the work went.
+
+- On an issue or a closed pull request the work goes to the branch the action created, in a commit whose message starts with `WIP:` and ends with a `Pi-Agent-Wip: issue #<number>` trailer, even when the agent had committed everything already. The next `@pi` on the same issue finds that branch and continues on it: the agent is told the branch holds unfinished work and to check what is done first. The branch is resumed only while its newest commit is that WIP commit. Once a resumed run pushes commits, or ends without an error and without pushing (it only checked the work, or reported a blocker), the WIP is over: in the second case the action pushes an empty `chore: close unfinished work` commit on top. The next `@pi` on the issue then starts a new branch. If several WIP branches exist for an issue, the one with the newest WIP commit is resumed; the others are left as they are. Squash-merging the pull request keeps the WIP commits out of the base branch's history.
+- On an open pull request the work goes to the pull request's branch, without the trailer: the next run uses that branch anyway.
+
+The push is never forced, skips the repository's git hooks, and leaves out changes under `.github/workflows/` (the app token cannot push them) and untracked files that earlier workflow steps wrote before the agent started, such as a generated config. Nothing is saved for pull requests from forks, which the action cannot push to, or with `use_commit_signing`, whose commits go through the API. A job cancelled or stopped by `timeout-minutes` ends before cleanup, so its work is not saved either. With `branch_name_template`, a resumed branch is found only if the template contains `{{entityNumber}}`.
+
+As on pull requests, a resumed branch's `.pi/`, `AGENTS.md` and similar files are replaced with the base branch's versions before the agent starts, since an earlier run wrote them.
+
 ### Why is the git history shallow?
 
 `actions/checkout` fetches one commit by default. On pull requests the action deepens the fetch to cover the pull request's commits. For full history, check out with `fetch-depth: 0`:
@@ -101,9 +112,27 @@ It cannot push to a closed pull request's branch, so it creates a new one, as it
 
 ### How do I see what the agent did?
 
-- The step summary shows the pi Agent Report when `display_report: true`.
+- The Job Summary always shows the run summary: how the session ended, how many model responses and tool calls it made, and tokens and cost. See [What does the run summary show?](#what-does-the-run-summary-show).
+- The Job Summary also shows the pi Agent Report, with the agent's text and every tool call, when `display_report: true`.
+- `export_session: true` exports the redacted session as pi's JSONL and an offline HTML page, for an upload step. See [Exporting the session](usage.md#exporting-the-session).
 - `show_full_output: true`, or re-running the job with debug logging, prints every pi event in the job log. Tool results can contain sensitive data; use it on private repositories only.
 - The `execution_file` output is the full record of the run, with token usage and cost.
+
+### What does the run summary show?
+
+Every run that reaches the agent writes a short "pi run summary" to the Job Summary of the workflow run, with no input to set. Failed runs get one too. It answers:
+
+- **How the session ended**: completed, stopped at the output limit, model error, aborted, no model response, no structured result (`json_schema`), or Runner error. This is how the pi session ended, not whether the task was done: the action does not judge the agent's work, and does not read the model's claims or checkboxes.
+- **How long it ran**, and **how many model responses and tool calls** it made: calls attempted, calls that ran and failed, and calls the `allowed_tools` and `disallowed_tools` rules denied. The counts come from the Runner's session events, each call counted once.
+- **Tokens**: input, output, cache read, cache write and their total, summed over the model responses as pi's session stats count them. Input does not include cached tokens. pi records cache usage a provider does not report as 0, so a 0 for cache read or write can mean either.
+- **Estimated cost**, priced from the pi SDK's model catalog. It can differ from your bill, especially with a custom endpoint (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`). For a model the catalog has no prices for, the cost is `unavailable`.
+
+A value the run could not measure shows as `unavailable`. When the Runner stops before the session starts, for example because `model` names an unknown model, the summary says that statistics are unavailable.
+
+It does not show what the agent did: no prompt, model text or reasoning, file contents, tool arguments, commands, command output or error messages. The summary is built only from numbers and fixed labels, so it is safe to publish on a public repository without relying on redaction. For more:
+
+- `display_report: true` adds the pi Agent Report below it, with the agent's text, each tool call and its result. It contains model-written content; enable it only for trusted input.
+- The `execution_file` output is the full record of the session. It can contain sensitive content and is not uploaded or published by the action.
 
 ### Why do some values in comments show as `[REDACTED]`?
 

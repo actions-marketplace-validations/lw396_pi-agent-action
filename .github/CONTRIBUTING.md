@@ -35,11 +35,11 @@ bun run install-hooks   # optional: format, typecheck and test before each commi
 | `examples/`                | Workflows users copy                                                                        |
 | `docs/`                    | User documentation; `docs/development/` holds design notes and ADRs                         |
 
-`CLAUDE.md` describes the architecture and the things that tend to bite; read it before a structural change.
+`AGENTS.md` describes the architecture and the things that tend to bite; read it before a structural change.
 
 ## Relationship to claude-code-action
 
-This project is ported from [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) and stays close to it, so fixes can be taken from there. Behaviour differs from it only for one of four reasons: pi works differently (`pi-capability`), multiple model providers (`multi-provider`), branding (`branding`), or a deliberate non-goal (`scope`). A change that makes behaviour differ must record the difference in [`docs/development/upstream-divergence.md`](../docs/development/upstream-divergence.md) and, if users see it, in the migration tables in the README.
+This project is ported from [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) but maintained independently: fixes are not taken from it, and its behaviour is a starting point rather than a constraint. Workflows written for it keep a migration path: they keep working, or fail with a message naming the fix. A change that makes behaviour differ from it must record the difference and its reason category in [`docs/development/upstream-divergence.md`](../docs/development/upstream-divergence.md).
 
 ## Pull requests
 
@@ -49,7 +49,7 @@ This project is ported from [anthropics/claude-code-action](https://github.com/a
 4. Use [Conventional Commits](https://www.conventionalcommits.org/) for commit messages (`feat:`, `fix:`, `docs:`, ...).
 5. Update the docs in the same pull request when inputs, outputs or behaviour change.
 
-Changes to `.github/workflows/` must keep the hardening that [`workflow-hardening.yml`](./workflows/workflow-hardening.yml) checks: jobs that run the agent use the egress-firewall runner, the network allow list and a narrow `allowed_tools`. `CLAUDE.md` explains each.
+Changes to `.github/workflows/` must keep the hardening that [`workflow-hardening.yml`](./workflows/workflow-hardening.yml) checks: jobs that run the agent use the egress-firewall runner, the network allow list and a narrow `allowed_tools`. `AGENTS.md` explains each.
 
 ## Trying a change end to end
 

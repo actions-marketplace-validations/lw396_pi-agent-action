@@ -25,6 +25,54 @@ env:
   OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
 ```
 
+## Custom OpenAI endpoints
+
+Set `OPENAI_BASE_URL` in the action step's `env:` to route the `openai` provider through any trusted endpoint implementing the OpenAI Responses API. This can be a third-party model service, a self-hosted gateway or a local server; the action does not depend on a particular service or provider extension.
+
+```yaml
+with:
+  model: openai/<model-id>:high
+  # Optional: another chat model supported by the same endpoint
+  classify_model: openai/<classification-model-id>
+env:
+  OPENAI_BASE_URL: https://api.example.com/v1
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
+
+For a complete manually triggered, read-only workflow, see [Custom OpenAI endpoints](../examples/custom-openai-endpoints.yml).
+
+Use an API key accepted by your endpoint. The `api_key` input can supply that key instead of `OPENAI_API_KEY`; it still applies only to the provider of `model`. The action does not perform interactive OAuth login or persist credentials for custom endpoints.
+
+- Supply the full API base URL, including `/v1` when the service requires it. The action does not append `/v1`; the OpenAI Responses transport sends requests to `<base-url>/responses`. An endpoint that only implements Chat Completions (`/chat/completions`) is not supported by this override.
+- URLs must be absolute HTTP(S), without embedded credentials, query strings or fragments. Surrounding whitespace and trailing slashes are removed. Use HTTPS for remote endpoints; HTTP is available for local testing.
+- The override applies to every `openai` model operation, including compaction and the separate inline-comment classification step. Other providers, including `openai-codex` and Azure, are unchanged. Use `model: openai/<model-id>`, not `openai-codex/<model-id>`.
+- Models and their capabilities still come from pi's pinned static catalog. The endpoint must support the selected model ID, streaming Responses API and tool calls; unknown model aliases are not discovered automatically. Dedicated classifier models require their own API support (for OpenAI, Decisions); use a chat model for classification when the endpoint only supports Responses.
+- An unset or blank value preserves the official OpenAI endpoint. A failed custom-endpoint request does not fall back to the official API or another provider. Classification failures keep the existing behavior: every eligible buffered comment is posted.
+- Keep the endpoint domain on your runner's network allowlist. For this repository's firewall runner, add its exact hostname to `.github/egress-firewall.yaml` with a usage comment; do not disable enforcement or use wildcard hosts.
+
+`OPENAI_BASE_URL` is an action-supported environment override, not a new action input or pi CLI flag. The action continues to ignore `models.json`; no additional provider extension is required. Treat catalog cost figures as estimates, not the custom service's actual bill.
+
+## Custom Anthropic endpoints
+
+Set `ANTHROPIC_BASE_URL` in the action step's `env:` to route the `anthropic` provider through a trusted endpoint implementing the Anthropic Messages API, such as a company gateway, LiteLLM or another proxy. Claude Code reads the same variable, so a workflow migrated from claude-code-action keeps its gateway.
+
+```yaml
+with:
+  model: anthropic/<model-id>
+env:
+  ANTHROPIC_BASE_URL: https://gateway.example.com
+  # The gateway's key, sent as x-api-key...
+  ANTHROPIC_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+  # ...or a token sent as Authorization: Bearer
+  # ANTHROPIC_AUTH_TOKEN: ${{ secrets.GATEWAY_TOKEN }}
+```
+
+- Supply the base URL **without** `/v1`: the Anthropic transport sends requests to `<base-url>/v1/messages`, so `https://gateway.example.com/v1` would call `/v1/v1/messages`. This is the opposite of `OPENAI_BASE_URL`.
+- The `api_key` input can supply the key instead of `ANTHROPIC_API_KEY`. Use a key your gateway issues: do not send a Claude subscription OAuth token (`sk-ant-oat...`) to a third-party endpoint.
+- The model ID must be in pi's pinned `anthropic` catalog, e.g. `claude-sonnet-4-5`, and the gateway must accept it. Services that offer an Anthropic-compatible API under their own model IDs cannot be selected this way. The gateway must support streaming, tool use and the `anthropic-beta` headers pi sends.
+- The override applies to every `anthropic` model operation, including compaction and inline comment classification. Amazon Bedrock, Google Vertex and other providers are unchanged.
+- URL validation, the absence of an official-endpoint fallback, and the network allowlist work as for [`OPENAI_BASE_URL`](#custom-openai-endpoints).
+
 ## Letting the agent run commands
 
 The agent can always read files. Everything else needs a rule in `allowed_tools`. List each command the job runs by its prefix:
@@ -107,6 +155,30 @@ with:
 
 A skill is instructions the agent follows and scripts it may run, written by someone else. Review it before you list it, and pin it so it cannot change under you. The scripts still need `allowed_tools` rules to run.
 
+### Pi packages
+
+Use `packages` for [native pi packages](https://pi.dev/docs/latest/packages) that bundle extensions, skills, prompt templates and themes. Keep `skills` for ordinary GitHub skill repositories; both inputs can be used together.
+
+```yaml
+with:
+  packages: |
+    # Examples; replace these with packages you have reviewed.
+    npm:@example/pi-tools@1.2.3
+    git:github.com/example/pi-review@v1.0.0
+  allowed_tools: package_review
+```
+
+- Each non-empty, non-comment line is one source, not a `pi install` command. Supported sources are `npm:NAME[@VERSION]` (including scoped names, tags and simple ranges such as `^1.2.3`) and `git:HOST/OWNER/REPO[@REF]`, also with an explicit HTTP(S) URL after `git:`. Shorthand Git sources use HTTPS. Local paths, bare URLs, SSH sources, embedded credentials and install flags are not supported.
+- Pin npm packages to exact versions and Git packages to full commit hashes for reproducible CI. Tags and branches can move. Without a version/ref, pi resolves the package's current default.
+- The Runner installs packages and their dependencies through the action's pinned pi SDK before calling the model. npm sources need `npm`; Git sources need `git`, and Git packages with a `package.json` also need `npm`. Private sources use the runner's npm/Git authentication; `GH_TOKEN` alone is not automatically Git authentication. Configure credentials in trusted setup steps, not in a source URL.
+- Installations live in a per-run directory under `RUNNER_TEMP` (or the system temp directory), outside the checkout. The action does not persist package declarations or read/write `~/.pi/agent/settings.json` or the repository's `.pi/settings.json`.
+- All resources declared by the package manifest are loaded; otherwise pi uses its conventional resource directories. Explicit package skills and prompts survive `--no-skills` and `--no-prompt-templates` in `pi_args`, which only disable automatic discovery. Themes are resolved too, but this headless action has no interactive theme display.
+- Installation or resource loading failures stop the run before calling the model. A package with no loadable pi resources fails too, including a missing package that pi would otherwise skip in offline mode. These are Runner startup failures, not `skills` prepare failures.
+- Package tools still need `allowed_tools` rules; `disallowed_tools` takes precedence. Use the actual tool names the package registers, not the package name.
+- During the run, `pi` on `PATH` is the pi CLI bundled with the action, the version the Runner runs, so packages that start pi processes find it; [pi-subagents](https://github.com/nicobailon/pi-subagents) runs each sub-agent that way. It needs `node` on `PATH` (GitHub-hosted runners have it) and is not set up on Windows. A pi process started this way is a separate run outside `allowed_tools`: only the tools it was started with limit it. It reads `~/.pi/agent` and the environment, not the action's model settings, so `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `api_key` and `max_retries` do not reach it; pass the provider key through `env:`.
+
+**Packages are trusted code, not sandboxed tools.** Extensions execute inside the action process, and dependency installation may run lifecycle scripts. They can access files, network and credentials directly, outside `allowed_tools` and bash isolation. Review packages and their dependencies, set sources only in trusted workflow configuration, and never derive them from issue/PR text or model output. Keep minimal workflow permissions and the runner's egress firewall; allow only the exact registry/Git hosts and package endpoints the job needs. See [Package trust](./security.md#package-trust).
+
 ## Reading CI results
 
 With `actions: read`, the agent gets tools to read workflow runs and job logs on the pull request it works on (`mcp__github_ci__get_ci_status`, `mcp__github_ci__get_workflow_run_details`, `mcp__github_ci__download_job_log`), so `@pi why did CI fail?` works.
@@ -162,9 +234,18 @@ with:
   exclude_comments_by_actor: "*[bot]" # leave bot comments out of the prompt
 ```
 
+## Retrying model errors
+
+pi retries a model request that failed with a transient error: overload, rate limit, a 5xx status or a dropped connection. The wait doubles from 2 seconds up to 60 seconds between attempts. The action sets 10 retries (pi's own default is 3), about 6 minutes in all, so a long run survives a short provider or proxy outage. Errors that will not go away, such as an exhausted quota, are not retried.
+
+```yaml
+with:
+  max_retries: 20 # about 16 minutes of outage; 0 disables retries
+```
+
 ## Limiting time and cost
 
-There is no turn limit. Bound a run with the job's `timeout-minutes`, keep `allowed_tools` narrow, and pick a cheaper model for routine jobs. The `execution_file` output and the step summary (`display_report: true`) show tokens and cost per run.
+There is no turn limit. Bound a run with the job's `timeout-minutes`, keep `allowed_tools` narrow, and pick a cheaper model for routine jobs. The run summary in the Job Summary shows each run's tokens and estimated cost, and the `execution_file` output has the full record.
 
 ```yaml
 jobs:
@@ -182,4 +263,4 @@ with:
   path_to_bun_executable: /nix/store/.../bin/bun
 ```
 
-Use the Bun version the action pins (see `action.yml`); others may not work.
+Use the Bun version the action pins (see `action.yml`); others may not work. The executable path must be a single line: CR/LF characters are rejected before its directory is added to the job's `PATH`. Spaces in the path are supported.

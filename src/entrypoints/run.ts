@@ -7,8 +7,6 @@
  */
 
 import * as core from "@actions/core";
-import { appendFile } from "fs/promises";
-import { existsSync, readFileSync } from "fs";
 import { setupGitHubToken, WorkflowValidationSkipError } from "../github/token";
 import { checkWritePermissions } from "../github/validation/permissions";
 import { createOctokit } from "../github/api/client";
@@ -28,44 +26,33 @@ import { prepareAgentMode } from "../modes/agent";
 import { checkContainsTrigger } from "../github/validation/trigger";
 import { restoreConfigFromBase } from "../github/operations/restore-config";
 import { validateBranchName } from "../github/operations/branch";
+import {
+  closeResumedWip,
+  saveUnfinishedWork,
+  wipCommentNote,
+  type WipSaveResult,
+  type WipTarget,
+} from "../github/operations/wip";
+import { GITHUB_SERVER_URL } from "../github/api/config";
 import { assertNoRemovedInputs } from "./removed-inputs";
 import { updateCommentLink } from "./update-comment-link";
-import { formatTurnsFromData } from "./format-turns";
+import { writeJobSummary } from "./job-summary";
 import { redactSecrets } from "../github/utils/sanitizer";
 import { collectSecretValues } from "../runner/secret-values";
-import { runPi } from "../runner/run-pi";
+import { runPi, RunnerFailure } from "../runner/run-pi";
+import type { RunAudit } from "../runner/run-audit";
+import type { SessionExport } from "../runner/session-export";
 import { readRunnerInputs, runnerOptions } from "../runner/run-plan";
 import { installSkills } from "../runner/skills";
-import {
-  readExecutionFile,
-  setExecutionFileOutputIfPresent,
-} from "../runner/execution-file";
+import { setExecutionFileOutputIfPresent } from "../runner/execution-file";
 
-/**
- * Write the step summary from the Runner's Execution file.
- */
-async function writeStepSummary(executionFile: string): Promise<void> {
-  const summaryFile = process.env.GITHUB_STEP_SUMMARY;
-  if (!summaryFile) return;
-
-  try {
-    const markdown = formatTurnsFromData(readExecutionFile(executionFile));
-    await appendFile(summaryFile, markdown);
-    console.log("Successfully formatted pi Agent report");
-  } catch (error) {
-    console.error(`Failed to format output: ${error}`);
-    // Fall back to raw JSON
-    try {
-      let fallback = "## pi Agent Report (Raw Output)\n\n";
-      fallback +=
-        "Failed to format output (please report). Here's the raw JSON:\n\n";
-      fallback += "```json\n";
-      fallback += redactSecrets(readFileSync(executionFile, "utf-8"));
-      fallback += "\n```\n";
-      await appendFile(summaryFile, fallback);
-    } catch {
-      console.error("Failed to write raw output to step summary");
-    }
+/** The export_session outputs: only files the export finished. */
+function setSessionExportOutputs(sessionExport: SessionExport | undefined) {
+  if (sessionExport?.jsonl) {
+    core.setOutput("session_jsonl", sessionExport.jsonl);
+  }
+  if (sessionExport?.html) {
+    core.setOutput("session_html", sessionExport.html);
   }
 }
 
@@ -79,6 +66,10 @@ async function run() {
   let agentBranch: string | undefined;
   let baseBranch: string | undefined;
   let executionFile: string | undefined;
+  // Set once runPi() is called: from then on the Job Summary gets the run
+  // summary, with runAudit if the session got far enough to report one.
+  let runnerStarted = false;
+  let runAudit: RunAudit | undefined;
   let agentSuccess = false;
   let prepareSuccess = true;
   let prepareError: string | undefined;
@@ -87,6 +78,11 @@ async function run() {
   // Paths reverted to the PR base branch, which cleanup must not commit back
   // onto the PR author's branch. Empty unless restoreConfigFromBase ran.
   let restoredConfigPaths: string[] = [];
+  // Where a failed run saves the agent's unfinished work (tag mode only).
+  let wipTarget: WipTarget | undefined;
+  let wipResult: WipSaveResult | undefined;
+  // The WIP commit this run resumed, closed if the run succeeds.
+  let resumedWip: { branch: string; sha: string } | undefined;
   // Track whether we've completed prepare phase, so we can attribute errors correctly
   let prepareCompleted = false;
   try {
@@ -157,6 +153,9 @@ async function run() {
       context,
       octokit,
       githubToken,
+      githubTokenSource: process.env.OVERRIDE_GITHUB_TOKEN
+        ? ("input" as const)
+        : ("app" as const),
       allowedTools: runnerInputs.allowedTools,
       untrustedInput: runnerInputs.untrustedInput,
     };
@@ -168,6 +167,13 @@ async function run() {
     commentId = prepareResult.commentId;
     agentBranch = prepareResult.branchInfo.agentBranch;
     baseBranch = prepareResult.branchInfo.baseBranch;
+    wipTarget = prepareResult.wipTarget;
+    if (agentBranch && prepareResult.branchInfo.resumedWip) {
+      resumedWip = {
+        branch: agentBranch,
+        sha: prepareResult.branchInfo.resumedWip.sha,
+      };
+    }
     // Outside the checkout, so they are never committed with the agent's changes.
     const skillsDir = await installSkills(runnerInputs.skills);
     prepareCompleted = true;
@@ -183,7 +189,13 @@ async function run() {
     // lacks base.ref, so we fall back to the mode-provided value — tag mode
     // fetches it from GraphQL; agent mode on issue_comment is an edge case
     // that at worst restores from the wrong trusted branch (still secure).
-    if (isEntityContext(context) && context.isPR) {
+    //
+    // A resumed WIP branch (operations/wip.ts) gets the same treatment: an
+    // earlier run wrote it, and that run's agent read untrusted GitHub content.
+    if (
+      isEntityContext(context) &&
+      (context.isPR || prepareResult.branchInfo.resumedWip)
+    ) {
       let restoreBase = baseBranch;
       if (
         isPullRequestEvent(context) ||
@@ -198,6 +210,7 @@ async function run() {
       }
     }
 
+    runnerStarted = true;
     const runResult = await runPi(prepareResult.prompt, {
       ...runnerOptions(runnerInputs, prepareResult),
       skillsDir,
@@ -205,6 +218,8 @@ async function run() {
 
     agentSuccess = runResult.conclusion === "success";
     executionFile = runResult.executionFile;
+    runAudit = runResult.audit;
+    setSessionExportOutputs(runResult.sessionExport);
 
     // Set action-level outputs
     if (runResult.executionFile) {
@@ -219,6 +234,10 @@ async function run() {
     core.setOutput("conclusion", runResult.conclusion);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    if (error instanceof RunnerFailure) {
+      runAudit = error.audit;
+      setSessionExportOutputs(error.sessionExport);
+    }
     executionFile ??= setExecutionFileOutputIfPresent();
     core.setOutput("conclusion", "failure");
     // Only mark as prepare failure if we haven't completed the prepare phase
@@ -229,6 +248,20 @@ async function run() {
     core.setFailed(`Action failed with error: ${redactSecrets(errorMessage)}`);
   } finally {
     // Phase 3: Cleanup (always runs)
+
+    // Before the comment update, so it links the branch the work went to.
+    const runUrl = `${GITHUB_SERVER_URL}/${context?.repository.full_name}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+    if (runnerStarted && !agentSuccess && wipTarget) {
+      wipResult = saveUnfinishedWork(wipTarget, {
+        runUrl,
+        excludePaths: restoredConfigPaths,
+      });
+    }
+    // A resumed run that succeeded ends the WIP, so the next request on the
+    // issue does not resume it again.
+    if (agentSuccess && resumedWip) {
+      closeResumedWip(resumedWip.branch, resumedWip.sha, runUrl);
+    }
 
     // Update tracking comment
     if (
@@ -253,19 +286,28 @@ async function run() {
           prepareError,
           useCommitSigning: context.inputs.useCommitSigning,
           restoredConfigPaths,
+          wipNote: wipCommentNote(
+            wipResult,
+            context.repository.owner,
+            context.repository.repo,
+            context.inputs.triggerPhrase,
+          ),
         });
       } catch (error) {
         console.error("Error updating comment with job link:", error);
       }
     }
 
-    // Write step summary (unless display_report is set to false)
-    if (
-      executionFile &&
-      existsSync(executionFile) &&
-      process.env.DISPLAY_REPORT !== "false"
-    ) {
-      await writeStepSummary(executionFile);
+    // The run summary is always written once the Runner started. The
+    // detailed report follows unless display_report is "false", its default
+    // in action.yml.
+    if (runnerStarted || executionFile) {
+      await writeJobSummary({
+        summaryFile: process.env.GITHUB_STEP_SUMMARY,
+        audit: runAudit,
+        executionFile,
+        displayReport: process.env.DISPLAY_REPORT !== "false",
+      });
     }
 
     // Set remaining action-level outputs

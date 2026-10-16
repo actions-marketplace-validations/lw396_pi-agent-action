@@ -1,7 +1,12 @@
 import { checkHumanActor } from "../../github/validation/actor";
 import { createInitialComment } from "../../github/operations/comments/create-initial";
-import { setupBranch } from "../../github/operations/branch";
-import { setupGitAuth } from "../git-auth";
+import { execFileSync } from "child_process";
+import { setupBranch, type BranchInfo } from "../../github/operations/branch";
+import {
+  listUntrackedFiles,
+  type WipTarget,
+} from "../../github/operations/wip";
+import { setupGitAuth, type CommitMethod } from "../git-auth";
 import { prepareMcpConfig } from "../../mcp/install-mcp-server";
 import {
   fetchGitHubData,
@@ -12,7 +17,51 @@ import {
 } from "../../github/data/fetcher";
 import { createPrompt } from "../../create-prompt";
 import { isEntityContext } from "../../github/context";
+import type { ParsedGitHubContext } from "../../github/context";
 import type { PrepareOptions, PrepareResult } from "../types";
+
+/**
+ * Where a failed run saves the agent's unfinished work: the branch the
+ * action created, or a pull request's own branch when origin can push to it.
+ * None with API commit signing, whose commits do not go through git.
+ */
+export function unfinishedWorkTarget(
+  branchInfo: BranchInfo,
+  context: ParsedGitHubContext,
+  commitMethod: CommitMethod,
+): WipTarget | undefined {
+  if (commitMethod === "api") return undefined;
+  let branch: string;
+  if (branchInfo.agentBranch) {
+    branch = branchInfo.agentBranch;
+  } else if (context.isPR && !branchInfo.forkPullRequest) {
+    branch = branchInfo.currentBranch;
+  } else {
+    return undefined;
+  }
+  let startSha: string;
+  let preexistingUntracked: string[];
+  try {
+    startSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    preexistingUntracked = listUntrackedFiles();
+  } catch (error) {
+    console.error("Cannot save unfinished work: no git checkout", error);
+    return undefined;
+  }
+  return {
+    branch,
+    startSha,
+    preexistingUntracked,
+    entity: {
+      type: context.isPR ? "pr" : "issue",
+      number: context.entityNumber,
+    },
+    resumable: Boolean(branchInfo.agentBranch),
+  };
+}
 
 /**
  * Prepares the tag mode execution context.
@@ -24,6 +73,7 @@ export async function prepareTagMode({
   context,
   octokit,
   githubToken,
+  githubTokenSource,
   allowedTools: workflowAllowedTools,
   untrustedInput,
 }: PrepareOptions): Promise<PrepareResult> {
@@ -56,7 +106,13 @@ export async function prepareTagMode({
     excludeCommentsByActor: context.inputs.excludeCommentsByActor,
   });
 
-  // Setup branch
+  const commitMethod = await setupGitAuth({
+    githubToken,
+    context,
+    untrustedInput,
+    failOnError: true,
+  });
+
   const branchInfo = await setupBranch(octokit, fetchedData, context);
 
   // Hash the PR's changed files now that its branch is checked out.
@@ -65,19 +121,14 @@ export async function prepareTagMode({
     changedFilesWithSHA: hashChangedFiles(fetchedData.changedFiles),
   };
 
-  const commitMethod = await setupGitAuth({
-    githubToken,
-    context,
-    untrustedInput,
-    failOnError: true,
-  });
-
   const { prompt, userRequest } = createPrompt(
     commentId,
     branchInfo.baseBranch,
     branchInfo.agentBranch,
     githubData,
     context,
+    githubTokenSource,
+    branchInfo.resumedWip?.sha,
   );
 
   const gitPushWrapper = `${process.env.GITHUB_ACTION_PATH}/scripts/git-push.sh`;
@@ -138,6 +189,7 @@ export async function prepareTagMode({
     userRequest,
     commentId,
     branchInfo,
+    wipTarget: unfinishedWorkTarget(branchInfo, context, commitMethod),
     mcpServers,
     allowedTools,
     acceptEdits: true,

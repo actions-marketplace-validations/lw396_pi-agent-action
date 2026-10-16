@@ -48,6 +48,11 @@ jobs:
 
           # Optional: Extra instructions for the agent
           # pi_args: --append-system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files."
+
+          # Export the redacted session as JSONL and HTML (session_jsonl and
+          # session_html outputs). Upload them in a later step: see
+          # docs/usage.md#exporting-the-session
+          export_session: true
         env:
           # The provider's key, under the variable name pi reads
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

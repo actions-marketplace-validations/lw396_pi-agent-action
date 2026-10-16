@@ -14,6 +14,122 @@ describe("updateCommentBody", () => {
     triggerUsername: undefined,
   };
 
+  describe("run end header", () => {
+    it("says the run ended, not that the task is done, after an implementation", () => {
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody:
+          "pi is working… <img src='spinner.gif' />\n\n### Changes\n- [x] Add parser\n- [x] Push branch\n\n[View job run](https://github.com/owner/repo/actions/runs/123)",
+        executionDetails: { duration_ms: 74000 },
+        triggerUsername: "trigger-user",
+        branchName: "pi/issue-1-20240101-1200",
+        prLink:
+          "\n[Create a PR](https://github.com/owner/repo/compare/main...pi/issue-1-20240101-1200)",
+      });
+
+      expect(result).toStartWith(
+        "**Pi's run for @trigger-user ended after 1m 14s** —— [View job](https://github.com/owner/repo/actions/runs/123) • [`pi/issue-1-20240101-1200`](https://github.com/owner/repo/tree/pi/issue-1-20240101-1200) • [Create PR ➔](https://github.com/owner/repo/compare/main...pi/issue-1-20240101-1200)\n\n---\n### Changes",
+      );
+      expect(result).not.toMatch(/finished|task/i);
+    });
+
+    it("uses the same header for an answer or review with no branch", () => {
+      const review =
+        "### Review\n\n- `src/a.ts:12` misses the null case.\n\nNo changes were made.";
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: `pi is working… <img src='spinner.gif' />\n\n${review}`,
+        executionDetails: { duration_ms: 9000 },
+        triggerUsername: "reviewer",
+      });
+
+      expect(result).toBe(
+        `**Pi's run for @reviewer ended after 9s** —— [View job](https://github.com/owner/repo/actions/runs/123)\n\n---\n${review}`,
+      );
+    });
+
+    it("keeps a reported blocker and open items as the model wrote them", () => {
+      const report = [
+        "### Incomplete: blocked",
+        "",
+        "- [x] Add the endpoint",
+        "- [ ] Run the integration tests",
+        "",
+        "`Bash(npm test:*)` is not in allowed_tools, so the tests did not run. The independent review was not run either.",
+      ].join("\n");
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: `pi is working…\n\n${report}`,
+        triggerUsername: "trigger-user",
+      });
+
+      expect(result).toStartWith("**Pi's run for @trigger-user ended**");
+      expect(result).toEndWith(`---\n${report}`);
+      expect(result).not.toContain("encountered an error");
+    });
+  });
+
+  describe("unfinished work note", () => {
+    it("puts the note under the failure header, above the model's report", () => {
+      const note =
+        "Unfinished work was saved to `pi/issue-1-x` in [abc1234](https://github.com/owner/repo/commit/abc1234).";
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: "pi is working…\n\n### Progress\n- [ ] Step",
+        actionFailed: true,
+        wipNote: note,
+      });
+
+      expect(result).toBe(
+        `**pi encountered an error** —— [View job](https://github.com/owner/repo/actions/runs/123)\n\n${note}\n\n---\n### Progress\n- [ ] Step`,
+      );
+    });
+  });
+
+  describe("spinner left by the model", () => {
+    const spinner =
+      '<img src="https://raw.githubusercontent.com/lw396/pi-agent-action/main/assets/spinner.gif" width="14px" height="14px" style="vertical-align: middle; margin-left: 4px;" />';
+
+    it("removes a spinner on its own line so the checklist under it renders", () => {
+      // An HTML line swallows the lines after it up to a blank line, so GitHub
+      // shows this checklist as plain text until the spinner is gone.
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: `### Implemented, committing\n${spinner}\n- [x] Add the endpoint\n- [ ] Push the branch`,
+        actionFailed: true,
+        executionDetails: { duration_ms: 30000 },
+      });
+
+      expect(result).toEndWith(
+        "---\n### Implemented, committing\n- [x] Add the endpoint\n- [ ] Push the branch",
+      );
+    });
+
+    it("keeps images that are not this repository's spinner", () => {
+      const other =
+        '<img src="https://example.com/not-spinner.gif" width="14" />';
+      const lookalike =
+        '<img src="https://example.com/loading-spinner.gif.png" />';
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: `Intro ${other}\n${lookalike}\nAnswer.`,
+        triggerUsername: "trigger-user",
+      });
+
+      expect(result).toEndWith(`---\nIntro ${other}\n${lookalike}\nAnswer.`);
+    });
+
+    it("removes a spinner at the end of a heading after a normal end", () => {
+      const result = updateCommentBody({
+        ...baseInput,
+        currentBody: `### Working ${spinner}\n\nAnswer.`,
+        triggerUsername: "trigger-user",
+      });
+
+      expect(result).toEndWith("---\n### Working\n\nAnswer.");
+    });
+  });
+
   describe("working message replacement", () => {
     it("includes success message header with duration", () => {
       const input = {
@@ -25,7 +141,7 @@ describe("updateCommentBody", () => {
 
       const result = updateCommentBody(input);
       expect(result).toContain(
-        "**pi finished @trigger-user's task in 1m 14s**",
+        "**Pi's run for @trigger-user ended after 1m 14s**",
       );
       expect(result).not.toContain("pi is working");
     });
@@ -69,7 +185,7 @@ describe("updateCommentBody", () => {
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**pi finished @testuser's task**");
+      expect(result).toContain("**Pi's run for @testuser ended**");
     });
   });
 
@@ -266,7 +382,7 @@ describe("updateCommentBody", () => {
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**pi finished @testuser's task in 31s**");
+      expect(result).toContain("**Pi's run for @testuser ended after 31s**");
     });
 
     it("formats duration in minutes and seconds in header", () => {
@@ -279,7 +395,7 @@ describe("updateCommentBody", () => {
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**pi finished @testuser's task in 1m 15s**");
+      expect(result).toContain("**Pi's run for @testuser ended after 1m 15s**");
     });
 
     it("includes duration in error header", () => {
@@ -305,8 +421,8 @@ describe("updateCommentBody", () => {
       };
 
       const result = updateCommentBody(input);
-      expect(result).toContain("**pi finished @testuser's task**");
-      expect(result).not.toContain(" in ");
+      expect(result).toContain("**Pi's run for @testuser ended**");
+      expect(result).not.toContain(" after ");
     });
   });
 
@@ -329,7 +445,9 @@ describe("updateCommentBody", () => {
       const result = updateCommentBody(input);
 
       // Check the header structure
-      expect(result).toContain("**pi finished @trigger-user's task in 1m 5s**");
+      expect(result).toContain(
+        "**Pi's run for @trigger-user ended after 1m 5s**",
+      );
       expect(result).toContain("—— [View job]");
       expect(result).toContain(
         "• [`claude-branch-123`](https://github.com/owner/repo/tree/claude-branch-123)",
@@ -337,7 +455,7 @@ describe("updateCommentBody", () => {
       expect(result).toContain("• [Create PR ➔]");
 
       // Check order - header comes before separator with blank line
-      const headerIndex = result.indexOf("**pi finished");
+      const headerIndex = result.indexOf("**Pi's run for");
       const blankLineAndSeparatorPattern = /\n\n---\n/;
       expect(result).toMatch(blankLineAndSeparatorPattern);
 
@@ -371,7 +489,7 @@ describe("updateCommentBody", () => {
       // Original link should be removed from body
       expect(result).not.toContain("[Create a PR]");
       // Username should come from argument, not extraction
-      expect(result).toContain("**pi finished @john-doe's task**");
+      expect(result).toContain("**Pi's run for @john-doe ended**");
       // Content should be preserved
       expect(result).toContain("I've made changes.");
     });
@@ -392,7 +510,7 @@ describe("updateCommentBody", () => {
       expect(result).toContain(
         "• [Create PR ➔](https://github.com/owner/repo/compare/main...claude/pr-456-20240101-1200)",
       );
-      expect(result).toContain("**pi finished @jane-doe's task**");
+      expect(result).toContain("**Pi's run for @jane-doe ended**");
     });
 
     it("includes both branch link and PR link for new branches", () => {
@@ -431,7 +549,7 @@ describe("updateCommentBody", () => {
 
       const result = updateCommentBody(input);
 
-      expect(result).toContain("pi finished @claude's task in 1m 30s");
+      expect(result).toContain("Pi's run for @claude ended after 1m 30s");
       expect(result).toContain(
         "[View job](https://github.com/owner/repo/actions/runs/123)",
       );

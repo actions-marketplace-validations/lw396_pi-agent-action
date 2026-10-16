@@ -19,29 +19,152 @@ describe("readRunnerInputs", () => {
     const inputs = readRunnerInputs({
       MODEL: "openai/gpt-5",
       API_KEY: "key",
+      OPENAI_BASE_URL: " https://proxy.example.com/prefix/v1/ ",
       PI_ARGS: "--thinking high",
+      INPUT_MAX_RETRIES: "5",
       INPUT_ALLOWED_TOOLS: "Bash(npm test)",
       INPUT_DISALLOWED_TOOLS: "Write",
       JSON_SCHEMA: '{"type":"object"}',
       INPUT_SKILLS: "github/awesome-copilot git-commit@v1.2.0",
       ALLOWED_BASH_ENV: "NPM_TOKEN",
+      INPUT_EXPORT_SESSION: "true",
     });
 
     expect(inputs).toEqual({
       model: "openai/gpt-5",
       apiKey: "key",
+      baseUrls: { openai: "https://proxy.example.com/prefix/v1" },
       piArgs: "--thinking high",
+      maxRetries: 5,
       allowedTools: [
         { text: "Bash(npm test)", tool: "bash", pattern: "npm test" },
       ],
       disallowedTools: [{ text: "Write", tool: "write" }],
       jsonSchema: '{"type":"object"}',
       skills: [["github/awesome-copilot", "git-commit@v1.2.0"]],
+      packages: [],
       untrustedInput: false,
       isolateBash: false,
       allowedBashEnv: "NPM_TOKEN",
       showFullOutput: false,
+      exportSession: true,
     });
+  });
+
+  test.each([undefined, "", "  "])(
+    "defaults max_retries to 10 when it is empty: %p",
+    (value) => {
+      expect(readRunnerInputs({ INPUT_MAX_RETRIES: value }).maxRetries).toBe(
+        10,
+      );
+    },
+  );
+
+  test("accepts 0 max_retries, which disables retries", () => {
+    expect(readRunnerInputs({ INPUT_MAX_RETRIES: "0" }).maxRetries).toBe(0);
+  });
+
+  test.each(["-1", "2.5", "ten", "3 retries"])(
+    "fails on a max_retries that is not a whole number: %p",
+    (value) => {
+      expect(() => readRunnerInputs({ INPUT_MAX_RETRIES: value })).toThrow(
+        "max_retries must be a whole number of retries",
+      );
+    },
+  );
+
+  test.each([undefined, "", "   "])(
+    "ignores an empty OPENAI_BASE_URL: %p",
+    (value) => {
+      expect(
+        readRunnerInputs({ OPENAI_BASE_URL: value }).baseUrls.openai,
+      ).toBeUndefined();
+    },
+  );
+
+  test("accepts a local HTTP proxy", () => {
+    expect(
+      readRunnerInputs({ OPENAI_BASE_URL: "http://127.0.0.1:8317/v1" }).baseUrls
+        .openai,
+    ).toBe("http://127.0.0.1:8317/v1");
+  });
+
+  test.each([
+    "proxy.example.com/v1",
+    "/v1",
+    "file:///tmp/proxy",
+    "ftp://proxy.example.com/v1",
+    "https://user:secret-password@proxy.example.com/v1",
+    "https://proxy.example.com/v1?key=secret-password",
+    "https://proxy.example.com/v1#secret-password",
+  ])("rejects an invalid OPENAI_BASE_URL without echoing it: %p", (value) => {
+    try {
+      readRunnerInputs({ OPENAI_BASE_URL: value });
+      throw new Error("Expected validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toContain("OPENAI_BASE_URL");
+      expect(message).not.toContain(value);
+      expect(message).not.toContain("secret-password");
+    }
+  });
+
+  test("reads ANTHROPIC_BASE_URL for the anthropic provider alone", () => {
+    expect(
+      readRunnerInputs({
+        ANTHROPIC_BASE_URL: " https://gateway.example.com/anthropic/ ",
+      }).baseUrls,
+    ).toEqual({ anthropic: "https://gateway.example.com/anthropic" });
+  });
+
+  test("rejects an invalid ANTHROPIC_BASE_URL without echoing it", () => {
+    const value = "https://gateway.example.com?key=secret-password";
+    expect(() => readRunnerInputs({ ANTHROPIC_BASE_URL: value })).toThrow(
+      /^ANTHROPIC_BASE_URL must be/,
+    );
+    try {
+      readRunnerInputs({ ANTHROPIC_BASE_URL: value });
+    } catch (error) {
+      expect((error as Error).message).not.toContain("secret-password");
+    }
+  });
+
+  test("passes explicit package sources from the workflow to the Runner", () => {
+    const options = runnerOptions(
+      readRunnerInputs({
+        INPUT_PACKAGES: `
+          # One native pi source per line
+          npm:@example/pi-tools@1.2.3
+
+          git:github.com/example/pi-review@v2
+        `,
+      }),
+      NO_MODE_SETTINGS,
+    );
+
+    expect(options.packages).toEqual([
+      "npm:@example/pi-tools@1.2.3",
+      "git:github.com/example/pi-review@v2",
+    ]);
+  });
+
+  test.each([
+    "./local-package",
+    "https://github.com/example/pi-tools",
+    "npm:",
+    "npm:../package",
+    "npm:tool --prefix ./",
+    "npm:tool && echo bad",
+    "git:owner/repo",
+    "git:github.com/owner/repo@",
+    "git:github.com/owner/repo@--orphan",
+    "git:github.com/owner/../repo",
+    "git:https://user:secret-password@example.com/owner/repo",
+  ])("rejects a packages line that is not a remote source: %p", (source) => {
+    expect(() => readRunnerInputs({ INPUT_PACKAGES: source })).toThrow(
+      "packages:",
+    );
   });
 
   test("fails on a tool rule the Runner cannot enforce", () => {
@@ -89,6 +212,20 @@ describe("readRunnerInputs", () => {
       expect(readRunnerInputs(env).showFullOutput).toBe(shown);
     },
   );
+
+  test.each([
+    [{}, false],
+    [{ INPUT_EXPORT_SESSION: "true" }, true],
+    [{ INPUT_EXPORT_SESSION: "false" }, false],
+    // A debug rerun shows full output, but does not export the session.
+    [{ RUNNER_DEBUG: "1", INPUT_SHOW_FULL_OUTPUT: "true" }, false],
+  ])("exports the session only with export_session: %p", (env, exported) => {
+    const inputs = readRunnerInputs(env);
+    expect(inputs.exportSession).toBe(exported);
+    expect(runnerOptions(inputs, NO_MODE_SETTINGS).exportSession).toBe(
+      exported,
+    );
+  });
 });
 
 describe("runnerOptions", () => {
@@ -125,14 +262,18 @@ describe("runnerOptions", () => {
     const options = runnerOptions(
       readRunnerInputs({
         MODEL: "openai/gpt-5",
+        OPENAI_BASE_URL: "https://proxy.example.com/v1",
         ALLOWED_NON_WRITE_USERS: "*",
         INPUT_SHOW_FULL_OUTPUT: "true",
+        INPUT_MAX_RETRIES: "4",
       }),
       NO_MODE_SETTINGS,
     );
 
     expect(options).toMatchObject({
       model: "openai/gpt-5",
+      maxRetries: 4,
+      baseUrls: { openai: "https://proxy.example.com/v1" },
       isolateBash: true,
       showFullOutput: true,
     });

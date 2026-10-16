@@ -37,7 +37,10 @@ What the agent does with a request:
 - **On an issue**, it creates a branch (`pi/issue-<number>-<timestamp>` by default), commits there, and links a prefilled "Create a PR" page in its comment. It does not open the pull request itself.
 - **On an open pull request**, it pushes to the pull request's branch.
 - **On a closed pull request**, it creates a new branch, as for an issue.
+- **When the run fails** (a model outage, for example), the action commits what the agent left and pushes it to that branch, so the work is not lost. On an issue or closed pull request the commit starts with `WIP:` and carries a `Pi-Agent-Wip` trailer: the next `@pi` there checks that branch out again and continues instead of starting a new one. Changes under `.github/workflows/` are not saved, nor are pull requests from forks or runs with `use_commit_signing`. See [Unfinished work from a failed run](./faq.md#what-happens-to-the-agents-work-when-a-run-fails).
 - **Reviews**: with `mcp__github_inline_comment__create_inline_comment` in `allowed_tools`, it can leave inline comments on the diff. It cannot submit, approve or merge a review.
+
+When the run ends, the action puts a header above the comment: **Pi's run for @user ended after 1m 14s**, with links to the job, the branch and a prefilled pull request. The header says only that the session ended; the agent's comment below it says whether the request is done, what is left and which checks it ran. A run that ended does not mean the task passed its acceptance criteria, CI or an independent review. When the run fails, the header reads **pi encountered an error** and shows the error, with secrets redacted.
 
 ### Slash commands
 
@@ -48,10 +51,10 @@ Start the request with a slash command to run instructions kept in the repositor
 @pi /triage 42 needs-info
 ```
 
-- `/skill:<name> [text]` loads the skill `<name>` from `.pi/skills/` or `.agents/skills/` and adds your text after it.
-- `/<name> [args]` runs the prompt template `.pi/prompts/<name>.md`, with `$1`, `$@` and the like replaced by the arguments.
+- `/skill:<name> [text]` loads the skill `<name>` from `.pi/skills/`, `.agents/skills/`, or the `skills`/`packages` inputs and adds your text after it.
+- `/<name> [args]` runs a prompt template from `.pi/prompts/` or a `packages` input, with `$1`, `$@` and the like replaced by the arguments.
 
-The command must come right after the trigger phrase. An unknown name is left as text for the agent to read. Skills also load without a command when a request matches their description. On pull requests, these files come from the base branch.
+The command must come right after the trigger phrase. An unknown name is left as text for the agent to read. When the workflow sets `prompt` with `track_progress`, the action does not expand commands from comments or descriptions, so the workflow's `prompt` stays the task; put the command in `prompt` instead. Skills also load without a command when a request matches their description. On pull requests, these files come from the base branch.
 
 Running commands other than `git add`, `commit` and `push` needs `allowed_tools`; see [Tool permissions](./security.md#tool-permissions).
 
@@ -59,23 +62,26 @@ Running commands other than `git add`, `commit` and `push` needs `allowed_tools`
 
 ### Model
 
-| Input     | Description                                                                                                                                                                                                                                                        | Default |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `model`   | **Required.** The model, as `<provider>/<model-id>`, optionally with `:<thinking-level>` (e.g. `openai/<model-id>:high`). See [Model providers](./setup.md#model-providers)                                                                                        | -       |
-| `api_key` | API key for the `model` provider, used instead of the provider's environment variable                                                                                                                                                                              | -       |
-| `skills`  | Agent skills to install with `gh skill install`, one per line: `OWNER/REPO <skill>[@version]`, or `OWNER/REPO --all`; `--pin` and `--allow-hidden-dirs` are also accepted. See [Skills from other repositories](./configuration.md#skills-from-other-repositories) | `""`    |
-| `pi_args` | Extra pi flags. Supported: `--thinking`, `--system-prompt`, `--append-system-prompt`, `--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `--no-skills`, `--no-prompt-templates`, `--no-context-files`. Any other flag fails the run                 | `""`    |
+| Input         | Description                                                                                                                                                                                                                                                        | Default |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `model`       | **Required.** The model, as `<provider>/<model-id>`, optionally with `:<thinking-level>` (e.g. `openai/<model-id>:high`). See [Model providers](./setup.md#model-providers)                                                                                        | -       |
+| `api_key`     | API key for the `model` provider, used instead of the provider's environment variable. Pass it from a secret: a literal value is echoed into the job log                                                                                                           | -       |
+| `skills`      | Agent skills to install with `gh skill install`, one per line: `OWNER/REPO <skill>[@version]`, or `OWNER/REPO --all`; `--pin` and `--allow-hidden-dirs` are also accepted. See [Skills from other repositories](./configuration.md#skills-from-other-repositories) | `""`    |
+| `packages`    | Trusted pi packages, one `npm:NAME[@VERSION]` or `git:HOST/OWNER/REPO[@REF]` per line. Installs outside the checkout; extensions run as code inside the action. See [Pi packages](./configuration.md#pi-packages)                                                  | `""`    |
+| `max_retries` | How many times pi retries a model request that failed with a transient error (overload, rate limit, 5xx, network). Waits double from 2 s up to 60 s, so 10 retries cover about 6 minutes of outage; `0` disables retries                                           | `10`    |
+| `pi_args`     | Extra pi flags. Supported: `--thinking`, `--system-prompt`, `--append-system-prompt`, `--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `--no-skills`, `--no-prompt-templates`, `--no-context-files`. Any other flag fails the run                 | `""`    |
 
 ### Prompt and output
 
-| Input                | Description                                                                                                                                                                                                                      | Default |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `prompt`             | Instructions for the agent. Setting it switches to agent mode                                                                                                                                                                    | `""`    |
-| `track_progress`     | In agent mode, post and update a tracking comment as tag mode does. Only for `pull_request` (`opened`, `synchronize`, `ready_for_review`, `reopened`, `labeled`) and `issues` (`opened`, `edited`, `labeled`, `assigned`) events | `false` |
-| `json_schema`        | A JSON Schema with `"type": "object"`. The agent submits its result through a tool whose arguments must match the schema; the result is the `structured_output` output. See [Structured output](#structured-output)              | `""`    |
-| `use_sticky_comment` | On pull requests, reuse the action's previous comment instead of posting a new one                                                                                                                                               | `false` |
-| `display_report`     | Write the pi Agent Report (the agent's turns, tokens and cost) to the step summary. The report contains model-written text; enable it only for trusted input                                                                     | `false` |
-| `show_full_output`   | Log every pi event as JSON in the job log. Known secrets are redacted, but tool results can still contain sensitive data. For debugging only; a debug re-run does the same                                                       | `false` |
+| Input                | Description                                                                                                                                                                                                                                                                    | Default |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `prompt`             | Instructions for the agent. Setting it switches to agent mode                                                                                                                                                                                                                  | `""`    |
+| `track_progress`     | In agent mode, post and update a tracking comment as tag mode does. Only for `pull_request` (`opened`, `synchronize`, `ready_for_review`, `reopened`, `labeled`) and `issues` (`opened`, `edited`, `labeled`, `assigned`) events                                               | `false` |
+| `json_schema`        | A JSON Schema with `"type": "object"`. The agent submits its result through a tool whose arguments must match the schema; the result is the `structured_output` output. See [Structured output](#structured-output)                                                            | `""`    |
+| `use_sticky_comment` | On pull requests, reuse the action's previous comment instead of posting a new one                                                                                                                                                                                             | `false` |
+| `display_report`     | Also write the pi Agent Report (the agent's turns, tool calls and results) to the Job Summary, below the run summary that is always written ([what it shows](faq.md#what-does-the-run-summary-show)). The report contains model-written text; enable it only for trusted input | `false` |
+| `export_session`     | Export the session, redacted, as pi's JSONL and an offline HTML page, for a later upload step. Nothing is uploaded automatically. See [Exporting the session](#exporting-the-session)                                                                                          | `false` |
+| `show_full_output`   | Log every pi event as JSON in the job log. Known secrets are redacted, but tool results can still contain sensitive data. For debugging only; a debug re-run does the same                                                                                                     | `false` |
 
 ### Tools
 
@@ -128,12 +134,58 @@ Inputs that only made sense for Claude Code (`anthropic_api_key`, `claude_args`,
 
 | Output              | Description                                                                                                                                     |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conclusion`        | `success` or `failure`                                                                                                                          |
+| `conclusion`        | `success` when the session ended normally, `failure` when it or the setup failed. It does not say whether the task is complete                  |
 | `execution_file`    | Path to a JSON array with the session header and every pi event; the last record, `session_stats`, has the token usage, `cost` and `durationMs` |
 | `branch_name`       | The branch the agent created, if any                                                                                                            |
 | `structured_output` | The result as a JSON string, when `json_schema` is set                                                                                          |
 | `session_id`        | pi's session ID                                                                                                                                 |
+| `session_jsonl`     | With `export_session`: path to the redacted session as pi's JSONL, outside the checkout. Unset when the export failed                           |
+| `session_html`      | With `export_session`: path to the offline HTML page of the same redacted session. Unset when it failed                                         |
 | `github_token`      | The GitHub token the action used                                                                                                                |
+
+## Exporting the session
+
+`export_session: true` exports the run's pi session for review after the run: what the agent said, each tool call with its arguments and result, errors and token usage, in the order they happened. It writes two files to the runner's temp directory, outside the checkout:
+
+- `session_jsonl`: the session as pi's JSONL, for scripts. pi's own session tools read it.
+- `session_html`: an HTML page made from that JSONL alone, readable offline in a browser.
+
+Both hold the same redacted record. Before anything is written, every string is redacted (known token formats; the environment's secret values, raw, URL-encoded and base64-encoded; and values of variables named like a credential, such as `DEPLOY_TOKEN`, down to 6 characters) and long strings are cut. Images, signatures, tool and extension data, and entries of kinds the export does not know are replaced by a placeholder that says what was left out, in both files. The page shows messages' HTML as text, and its Content Security Policy keeps it from loading anything, a model-written remote image included. The export is for reading: it cannot resume the session.
+
+The action uploads nothing. Upload the files in a later step, also when the run failed:
+
+```yaml
+- uses: lw396/pi-agent-action@v1
+  id: pi
+  with:
+    model: opencode/gpt-6-luna
+    prompt: "..."
+    export_session: true
+- uses: actions/upload-artifact@v7
+  if: always() && steps.pi.outputs.session_jsonl != ''
+  with:
+    name: pi-session
+    path: |
+      ${{ steps.pi.outputs.session_jsonl }}
+      ${{ steps.pi.outputs.session_html }}
+    retention-days: 7 # 7 to 14 days is usually enough to review a run
+    if-no-files-found: ignore
+```
+
+Before you turn it on:
+
+- **Artifacts are not private.** On a public repository, anyone who can see the workflow run can download its artifacts. Keep the retention short, and on public repositories export only runs whose input you trust.
+- **Redaction has limits.** It catches known formats and secrets that are in the environment. A secret that is in neither, such as one written into a file the agent read, or one the model split or encoded some other way, gets through. Treat the files as sensitive.
+- **It is a record, not a verdict.** The export shows what happened in the session; it does not say whether the task was done.
+
+How it differs from the other records:
+
+| Record                             | Where                              | What it holds                                                                                   |
+| ---------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Run summary                        | Job Summary, always                | Counts, tokens and estimated cost only ([what it shows](faq.md#what-does-the-run-summary-show)) |
+| pi Agent Report (`display_report`) | Job Summary                        | The agent's text and each tool call with its result, redacted                                   |
+| Session export (`export_session`)  | Files for your upload step         | The whole session branch, redacted, with placeholders for what was left out                     |
+| Execution file (`execution_file`)  | A file on the runner, not uploaded | pi's raw events, unredacted                                                                     |
 
 ## Structured output
 

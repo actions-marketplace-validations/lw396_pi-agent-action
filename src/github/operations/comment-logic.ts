@@ -2,6 +2,22 @@ import { GITHUB_SERVER_URL } from "../api/config";
 import { redactSecrets } from "../utils/sanitizer";
 import { encodeBranchNameForUrl } from "./comments/common";
 
+// The spinner the prompt asks the model to show while it works: an <img>
+// whose URL ends in /spinner.gif (path boundary, then a quote or space), so
+// other images in the comment stay.
+const SPINNER_IMG = `<img[^>]*\/spinner\.gif(?=["'\s])[^>]*>`;
+const SPINNER_LINE = new RegExp(`^[ \t]*${SPINNER_IMG}[ \t]*(?:\r?\n|$)`, "gm");
+const SPINNER_INLINE = new RegExp(`[ \t]*${SPINNER_IMG}`, "g");
+
+/**
+ * Remove the spinners the model left, e.g. when the run failed before its
+ * final update. A spinner on its own line starts an HTML block that runs to
+ * the next blank line, so GitHub shows a list right under it as plain text.
+ */
+function removeSpinners(body: string): string {
+  return body.replace(SPINNER_LINE, "").replace(SPINNER_INLINE, "");
+}
+
 export type ExecutionDetails = {
   total_cost_usd?: number;
   duration_ms?: number;
@@ -18,6 +34,8 @@ export type CommentUpdateInput = {
   branchName?: string;
   triggerUsername?: string;
   errorDetails?: string;
+  /** Where a failed run's unfinished work was saved, shown under the header. */
+  wipNote?: string;
 };
 
 export function ensureProperlyEncodedUrl(url: string): string | null {
@@ -43,7 +61,7 @@ export function ensureProperlyEncodedUrl(url: string): string | null {
       return url.replace(/ /g, "%20");
     }
     return url;
-  } catch (e) {
+  } catch {
     // If URL parsing fails, try basic fixes
     try {
       // Replace spaces with %20
@@ -79,12 +97,15 @@ export function updateCommentBody(input: CommentUpdateInput): string {
     branchName,
     triggerUsername,
     errorDetails,
+    wipNote,
   } = input;
 
   // Extract content from the original comment body
   // First, remove the "pi is working…" or "pi is working..." message
   const workingPattern = /pi is working[…\.]{1,3}(?:\s*<img[^>]*>)?/i;
-  let bodyContent = originalBody.replace(workingPattern, "").trim();
+  let bodyContent = removeSpinners(
+    originalBody.replace(workingPattern, ""),
+  ).trim();
 
   // Check if there's a PR link in the content
   let prLinkFromContent = "";
@@ -126,9 +147,12 @@ export function updateCommentBody(input: CommentUpdateInput): string {
     const username =
       triggerUsername || (usernameMatch ? usernameMatch[1] : "user");
 
-    header = `**pi finished @${username}'s task`;
+    // The Runner only knows that the session ended normally, not whether the
+    // request, its acceptance criteria or an independent review passed: the
+    // header must not claim more. The body reports the task's outcome.
+    header = `**Pi's run for @${username} ended`;
     if (durationStr) {
-      header += ` in ${durationStr}`;
+      header += ` after ${durationStr}`;
     }
     header += "**";
   }
@@ -188,6 +212,10 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // secrets, so redact known formats before posting.
   if (actionFailed && errorDetails) {
     newBody += `\n\n\`\`\`\n${redactSecrets(errorDetails)}\n\`\`\``;
+  }
+
+  if (wipNote) {
+    newBody += `\n\n${wipNote}`;
   }
 
   newBody += `\n\n---\n`;

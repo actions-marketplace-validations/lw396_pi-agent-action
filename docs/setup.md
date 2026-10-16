@@ -212,7 +212,7 @@ We also recommend that you always use short-lived tokens when possible
 
 ### Best Practices for Authentication
 
-1. ✅ Always pass keys as `${{ secrets.<NAME> }}` in workflows, through `env:` or the `api_key` input
+1. ✅ Always pass keys as `${{ secrets.<NAME> }}` in workflows, through `env:` or the `api_key` input. GitHub masks a secret's value in the job log; a key written into the workflow as a literal is not masked, and the runner echoes the step's inputs and environment there. See [Output redaction](./security.md#output-redaction) for what the action does with values on its way out.
 2. ✅ Never commit API keys or tokens to version control
 3. ✅ Regularly rotate your API keys and tokens
 4. ✅ Use environment secrets for organization-wide access

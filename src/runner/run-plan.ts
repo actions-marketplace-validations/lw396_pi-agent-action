@@ -1,22 +1,28 @@
 import type { McpServers } from "./mcp-servers";
+import { readBaseUrls, type ModelRuntimeOptions } from "./model-runtime";
 import type { RunnerOptions } from "./run-pi";
 import { parseSkills, type SkillInstall } from "./skills";
+import { parsePackages } from "./packages";
 import { parseToolRules, type ToolRule } from "./tool-rules";
 
 /**
  * The action inputs the Runner uses, read once from the env vars that
  * action.yml sets from them. Nothing else reads these variables.
  */
-export type RunnerInputs = {
+export type RunnerInputs = Required<ModelRuntimeOptions> & {
   model?: string;
   apiKey?: string;
   piArgs?: string;
+  /** The max_retries input: pi's retry.maxRetries for transient model errors. */
+  maxRetries: number;
   /** The allowed_tools input, which also decides the action's MCP servers. */
   allowedTools: ToolRule[];
   disallowedTools: ToolRule[];
   jsonSchema?: string;
   /** The skills input: the `gh skill install` calls prepare makes. */
   skills: SkillInstall[];
+  /** Explicit native pi package sources supplied by the workflow. */
+  packages: string[];
   /**
    * allowed_non_write_users is set, so content from users without write
    * access can reach the model. Prepare then keeps the GitHub token out of
@@ -32,6 +38,11 @@ export type RunnerInputs = {
   allowedBashEnv?: string;
   /** show_full_output, or a debug rerun, which shows everything as in Upstream. */
   showFullOutput: boolean;
+  /**
+   * export_session: only the workflow's own setting, not a debug rerun, since
+   * the export becomes a file a later step may upload.
+   */
+  exportSession: boolean;
 };
 
 /** What a mode adds to the run, besides the workflow's inputs. */
@@ -46,17 +57,37 @@ export type ModeRunSettings = {
   mcpServers: McpServers;
 };
 
+/** The max_retries default, also declared in action.yml. */
+export const DEFAULT_MAX_RETRIES = 10;
+
+/**
+ * The max_retries input: a whole number of retries, at least 0. Empty uses
+ * the default; anything else fails the run before it is prepared.
+ */
+export function parseMaxRetries(value: string | undefined): number {
+  const text = value?.trim() ?? "";
+  if (text === "") return DEFAULT_MAX_RETRIES;
+  if (!/^\d+$/.test(text)) {
+    throw new Error(
+      `max_retries must be a whole number of retries, 0 or more (got: ${JSON.stringify(value)})`,
+    );
+  }
+  return Number(text);
+}
+
 /**
  * Read the Runner's inputs. Throws on a tool rule the action cannot enforce
- * as written, or a skills line it would not install as written, so the run
- * fails before anything is prepared.
+ * as written, or an invalid skills/packages line, so the run fails before
+ * anything is prepared.
  */
 export function readRunnerInputs(env: NodeJS.ProcessEnv): RunnerInputs {
   const untrustedInput = !!env.ALLOWED_NON_WRITE_USERS;
   return {
     model: env.MODEL,
     apiKey: env.API_KEY,
+    baseUrls: readBaseUrls(env),
     piArgs: env.PI_ARGS,
+    maxRetries: parseMaxRetries(env.INPUT_MAX_RETRIES),
     allowedTools: parseToolRules(env.INPUT_ALLOWED_TOOLS, "allowed_tools"),
     disallowedTools: parseToolRules(
       env.INPUT_DISALLOWED_TOOLS,
@@ -64,12 +95,14 @@ export function readRunnerInputs(env: NodeJS.ProcessEnv): RunnerInputs {
     ),
     jsonSchema: env.JSON_SCHEMA,
     skills: parseSkills(env.INPUT_SKILLS),
+    packages: parsePackages(env.INPUT_PACKAGES),
     untrustedInput,
     isolateBash: untrustedInput && env.SUBPROCESS_ISOLATION !== "false",
     allowedBashEnv: env.ALLOWED_BASH_ENV,
     // RUNNER_DEBUG is what core.isDebug() reads.
     showFullOutput:
       env.INPUT_SHOW_FULL_OUTPUT === "true" || env.RUNNER_DEBUG === "1",
+    exportSession: env.INPUT_EXPORT_SESSION === "true",
   };
 }
 
@@ -82,7 +115,10 @@ export function runnerOptions(
     userRequest: mode.userRequest,
     model: inputs.model,
     apiKey: inputs.apiKey,
+    baseUrls: inputs.baseUrls,
     piArgs: inputs.piArgs,
+    maxRetries: inputs.maxRetries,
+    packages: inputs.packages,
     // The mode's own rules come first, then the workflow's allowed_tools.
     allowedTools: [
       ...parseToolRules(mode.allowedTools.join("\n"), "allowed_tools"),
@@ -95,6 +131,7 @@ export function runnerOptions(
     isolateBash: inputs.isolateBash,
     allowedBashEnv: inputs.allowedBashEnv,
     showFullOutput: inputs.showFullOutput,
+    exportSession: inputs.exportSession,
     mcpServers: mode.mcpServers,
   };
 }

@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import { mkdtemp } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, sep } from "path";
 import {
   createAgentSession,
   createCodemodeExtension,
@@ -15,10 +15,12 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { redactSecrets } from "../github/utils/sanitizer";
-import { createModelRuntime } from "./model-runtime";
+import { createModelRuntime, type ModelRuntimeOptions } from "./model-runtime";
 import { isolatedBashTool } from "./bash-isolation";
 import { commentRedactionExtension } from "./comment-redaction";
 import { parsePiArgs } from "./pi-args";
+import { putBundledPiOnPath } from "./pi-cli";
+import { resolvePackages } from "./packages";
 import { expandSlashCommand } from "./slash-command";
 import {
   writeExecutionFile,
@@ -26,6 +28,13 @@ import {
   type SessionStatsRecord,
 } from "./execution-file";
 import { mcpServerExtensions, type McpServers } from "./mcp-servers";
+import { writeSessionExport, type SessionExport } from "./session-export";
+import {
+  createAuditCollector,
+  type AuditCollector,
+  type RunAudit,
+  type Termination,
+} from "./run-audit";
 import {
   toolPermissionsExtension,
   type ToolPermissions,
@@ -36,7 +45,7 @@ import {
   type StructuredOutput,
 } from "./structured-output";
 
-export type RunnerOptions = {
+export type RunnerOptions = ModelRuntimeOptions & {
   /** Model in pi's `provider/id[:thinking]` form. Required. */
   model?: string;
   /**
@@ -53,6 +62,12 @@ export type RunnerOptions = {
   /** The pi_args input: pi's own command-line flags, a supported subset. */
   piArgs?: string;
   /**
+   * The max_retries input: pi's retry.maxRetries, how often pi retries a
+   * model request that failed with a transient error. Unset keeps pi's
+   * default.
+   */
+  maxRetries?: number;
+  /**
    * The allowed_tools input, plus the mode's own rules. Calls to tools other
    * than the read-only ones must match a rule.
    */
@@ -64,6 +79,8 @@ export type RunnerOptions = {
    * `--skill` path in pi, so `--no-skills` in pi_args does not drop them.
    */
   skillsDir?: string;
+  /** Explicit pi packages, installed outside the checkout for this run only. */
+  packages?: string[];
   /**
    * Let edit and write change files in the working directory without a rule,
    * like Claude Code's acceptEdits permission mode in Upstream's tag mode.
@@ -98,6 +115,11 @@ export type RunnerOptions = {
    * on public repositories.
    */
   showFullOutput?: boolean;
+  /**
+   * The export_session input: once the session ends, export it redacted, as
+   * pi's JSONL and an HTML page, to RUNNER_TEMP/pi-session-export.
+   */
+  exportSession?: boolean;
   /** The action's MCP servers, registered with `direct` exposure. */
   mcpServers?: McpServers;
   /** Working directory of the session. Defaults to process.cwd(). */
@@ -119,7 +141,14 @@ export type RunnerResult = {
   executionFile?: string;
   sessionId?: string;
   structuredOutput?: string;
+  /** What the session did, safe to publish. A failed run throws it in a RunnerFailure. */
+  audit: RunAudit;
+  /** The redacted session export, when exportSession is set. */
+  sessionExport?: SessionExport;
 };
+
+/** Where the session export is written, under RUNNER_TEMP: outside the checkout. */
+const SESSION_EXPORT_DIR = "pi-session-export";
 
 // Streaming deltas: message_end and tool_execution_end carry the final values.
 const OMITTED_EVENTS = new Set<AgentSessionEvent["type"]>([
@@ -155,7 +184,9 @@ const AGENT_HIDDEN_ENV = [
  * Run one pi session on the prompt, in this process (ADR-0001).
  *
  * The Execution file is written whether the session succeeds or fails. A
- * failed session throws after the file is written, like Upstream's executor.
+ * failed session throws a RunnerFailure after the file is written, like
+ * Upstream's executor; a run that fails before the session starts throws a
+ * plain Error.
  */
 export async function runPi(
   prompt: string,
@@ -176,37 +207,51 @@ export async function runPi(
   const cwd = options.cwd ?? process.cwd();
   const structuredOutput = createStructuredOutput(options.jsonSchema);
   const toolPermissions = buildToolPermissions(options, cwd, structuredOutput);
+  const auditCollector = createAuditCollector();
   const customTools = bashTools(options, cwd);
 
   for (const name of AGENT_HIDDEN_ENV) {
     delete process.env[name];
   }
 
-  const modelRuntime = options.modelRuntime ?? (await createModelRuntime());
+  const modelRuntime =
+    options.modelRuntime ?? (await createModelRuntime(options));
   const model = await resolveModel(
     modelRuntime,
     modelReference,
     options.apiKey,
   );
 
-  // pi's global directory. Settings live in memory and sessions are not
-  // persisted, so this stays empty; it only keeps pi away from ~/.pi/agent.
+  // A per-run pi directory, outside the checkout and away from ~/.pi/agent.
+  // Only ephemeral packages and runtime logs live here, not saved settings.
   const agentDir = await mkdtemp(
     join(process.env.RUNNER_TEMP || tmpdir(), "pi-agent-"),
   );
+  // `pi` on PATH is the pi this run uses, for processes the session starts.
+  await putBundledPiOnPath();
   // Settings live only in memory: neither ~/.pi/agent/settings.json nor the
   // repository's .pi/settings.json is read, and nothing is written, so the
   // agent cannot change configuration later processes in the job would read
   // (docs/development/upstream-divergence.md). Pass every setting here at
   // once: values applied afterwards with applyOverrides() are lost on reload
   // (test/pi-sdk/settings.test.ts).
-  const settingsManager = SettingsManager.inMemory({});
+  const settingsManager = SettingsManager.inMemory(
+    options.maxRetries === undefined
+      ? {}
+      : { retry: { maxRetries: options.maxRetries } },
+  );
+  const packagePaths = await resolvePackages(
+    options.packages ?? [],
+    cwd,
+    agentDir,
+    settingsManager,
+  );
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
     settingsManager,
     extensionFactories: [
-      toolPermissionsExtension(toolPermissions),
+      toolPermissionsExtension(toolPermissions, auditCollector.denied),
       createCodemodeExtension(),
       commentRedactionExtension(),
       ...(structuredOutput ? [structuredOutput.extension] : []),
@@ -215,10 +260,54 @@ export async function runPi(
         join(agentDir, "mcp.log"),
       ),
     ],
-    additionalSkillPaths: options.skillsDir ? [options.skillsDir] : [],
+    ...packagePaths,
+    additionalSkillPaths: [
+      ...(options.skillsDir ? [options.skillsDir] : []),
+      ...(packagePaths.additionalSkillPaths ?? []),
+    ],
     ...piArgs.resources,
   });
-  await resourceLoader.reload();
+  try {
+    await resourceLoader.reload();
+  } catch (error) {
+    if (!options.packages?.length) throw error;
+    throw new Error(
+      `packages: installation or loading failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (options.packages?.length) {
+    const errors = resourceLoader.getExtensions().errors;
+    if (errors.length) {
+      throw new Error(
+        `packages: extension loading failed: ${errors.map((error) => `${error.path}: ${error.error}`).join("; ")}`,
+      );
+    }
+    const skills = resourceLoader.getSkills();
+    const prompts = resourceLoader.getPrompts();
+    const themes = resourceLoader.getThemes();
+    const loadedPaths = new Set([
+      ...skills.skills.map((skill) => skill.filePath),
+      ...prompts.prompts.map((prompt) => prompt.filePath),
+      ...themes.themes.map((theme) => theme.sourceInfo?.path),
+    ]);
+    const failed = [
+      ...skills.diagnostics,
+      ...prompts.diagnostics,
+      ...themes.diagnostics,
+    ].filter(
+      (diagnostic) =>
+        diagnostic.type !== "collision" &&
+        diagnostic.path?.startsWith(`${agentDir}${sep}`) &&
+        !loadedPaths.has(diagnostic.path),
+    );
+    // pi warns and skips invalid resources. Fail on skipped package resources,
+    // but retain its normal warnings for resources that did load and collisions.
+    if (failed.length) {
+      throw new Error(
+        `packages: resource loading failed: ${failed.map((diagnostic) => `${diagnostic.path}: ${diagnostic.message}`).join("; ")}`,
+      );
+    }
+  }
   const command = expandRequestedCommand(options.userRequest, resourceLoader);
 
   const sessionManager = SessionManager.inMemory(cwd);
@@ -252,10 +341,12 @@ export async function runPi(
     sessionManager.getHeader(),
     options.showFullOutput,
   );
-  const { failure, stats } = await runSession(
+  const { failure, stats, audit } = await runSession(
     session,
     command ? `${prompt}\n\n${command}` : prompt,
     structuredOutput,
+    auditCollector,
+    hasCatalogPrices(model.model),
   );
   const totals: SessionStatsRecord = { type: "session_stats", ...stats };
   records.push(totals);
@@ -266,16 +357,60 @@ export async function runPi(
   const executionFile = await writeExecutionFile(records);
   const sessionId = session.sessionId;
   core.info(`Set session_id: ${sessionId}`);
+  // The in-memory session outlives its AgentSession: no raw copy is written.
+  const sessionExport = options.exportSession
+    ? await writeSessionExport(
+        sessionManager,
+        join(process.env.RUNNER_TEMP || tmpdir(), SESSION_EXPORT_DIR),
+      )
+    : undefined;
 
   if (failure !== undefined) {
-    throw new Error(`pi execution failed: ${failure}`);
+    throw new RunnerFailure(
+      `pi execution failed: ${failure}`,
+      audit,
+      sessionExport,
+    );
   }
   return {
     conclusion: "success",
     executionFile,
     sessionId,
     structuredOutput: structuredOutput?.output(),
+    audit,
+    sessionExport,
   };
+}
+
+/**
+ * A model the catalog has no prices for (a custom endpoint's, say) costs 0 in
+ * pi's stats: the audit leaves its cost unknown instead.
+ */
+function hasCatalogPrices(model: {
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+  };
+}): boolean {
+  const { input, output, cacheRead, cacheWrite } = model.cost;
+  return [input, output, cacheRead, cacheWrite].some((price) => price > 0);
+}
+
+/**
+ * A Runner session that failed, with the audit of what it did and, when
+ * exportSession is set, its redacted export.
+ */
+export class RunnerFailure extends Error {
+  constructor(
+    message: string,
+    readonly audit: RunAudit,
+    readonly sessionExport?: SessionExport,
+  ) {
+    super(message);
+    this.name = "RunnerFailure";
+  }
 }
 
 /** The allowed_tools and disallowed_tools rules, and what the run allows besides. */
@@ -357,29 +492,62 @@ function recordEvents(
 
 /**
  * Prompt the session and dispose of it. Returns why the run failed, if it did,
- * and the totals for the whole run, so spend can be tracked per run.
+ * the totals for the whole run, so spend can be tracked per run, and the run
+ * audit.
  */
 async function runSession(
   session: AgentSession,
   prompt: string,
   structuredOutput: StructuredOutput | undefined,
+  auditCollector: AuditCollector,
+  priced: boolean,
 ) {
   let failure: string | undefined;
+  let termination: Termination;
+  const unsubscribe = session.subscribe(auditCollector.observe);
   const startedAt = Date.now();
   try {
     await session.bindExtensions({});
     await session.prompt(prompt);
-    failure = sessionFailure(session.messages) ?? structuredOutput?.failure();
+    ({ termination, failure } = sessionEnd(session.messages));
+    if (failure === undefined) {
+      failure = structuredOutput?.failure();
+      if (failure !== undefined) termination = "structured_output_missing";
+    }
   } catch (error) {
-    failure = error instanceof Error ? error.message : String(error);
+    failure = errorMessage(error);
+    termination = "runner_error";
   }
+  const durationMs = Date.now() - startedAt;
+  unsubscribe();
   const {
     sessionFile: _file,
     contextUsage: _context,
     ...totals
   } = session.getSessionStats();
-  await closeSession(session);
-  return { failure, stats: { ...totals, durationMs: Date.now() - startedAt } };
+  try {
+    await closeSession(session);
+  } catch (error) {
+    // Still a failure with the session's statistics and Execution file.
+    if (failure === undefined) {
+      failure = `closing the session failed: ${errorMessage(error)}`;
+      termination = "runner_error";
+    }
+  }
+  return {
+    failure,
+    stats: { ...totals, durationMs },
+    audit: auditCollector.audit({
+      termination,
+      durationMs,
+      stats: totals,
+      priced,
+    }),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -396,19 +564,31 @@ async function closeSession(session: AgentSession) {
 }
 
 /**
- * Why the session failed, or undefined if it succeeded. pi reports a provider
- * error, after its own retries, as the stop reason of the final assistant
- * message rather than by rejecting prompt().
+ * How the session ended, from its last response, and why it failed, unless
+ * it succeeded. pi reports a provider error, after its own retries, as the
+ * stop reason of the final assistant message rather than by rejecting
+ * prompt(). A response cut at the output limit is not a failure.
  */
-function sessionFailure(
-  messages: AgentSession["messages"],
-): string | undefined {
+function sessionEnd(messages: AgentSession["messages"]): {
+  termination: Termination;
+  failure?: string;
+} {
   const last = messages.findLast((m) => m.role === "assistant");
-  if (!last) return "the model did not respond";
-  if (last.stopReason === "error" || last.stopReason === "aborted") {
-    return last.errorMessage ?? `the model stopped with ${last.stopReason}`;
+  if (!last) {
+    return { termination: "no_response", failure: "the model did not respond" };
   }
-  return undefined;
+  const failure =
+    last.errorMessage ?? `the model stopped with ${last.stopReason}`;
+  switch (last.stopReason) {
+    case "error":
+      return { termination: "model_error", failure };
+    case "aborted":
+      return { termination: "aborted", failure };
+    case "length":
+      return { termination: "output_limit" };
+    default:
+      return { termination: "completed" };
+  }
 }
 
 /**

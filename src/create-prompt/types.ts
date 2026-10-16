@@ -1,4 +1,5 @@
 import type { GitHubContext } from "../github/context";
+import type { GitHubTokenSource } from "../github/token";
 
 export type CommonFields = {
   repository: string;
@@ -111,4 +112,17 @@ export type EventData =
 export type PreparedContext = CommonFields & {
   eventData: EventData;
   githubContext?: GitHubContext;
+  /** Unset when unknown; the prompt then assumes nothing about the token. */
+  githubTokenSource?: GitHubTokenSource;
+  /**
+   * A random id the default prompt puts on the opening and closing tag of each
+   * block of GitHub content, so text inside a block cannot close it and open a
+   * fake one. createPrompt sets a new one per run; unset, tags carry no id.
+   */
+  contentTagId?: string;
+  /**
+   * The WIP commit at the tip of the checked-out branch, when the run resumes
+   * unfinished work an earlier failed run saved (operations/wip.ts).
+   */
+  resumedWipCommit?: string;
 };

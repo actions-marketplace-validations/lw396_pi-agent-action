@@ -14,6 +14,7 @@ import { rmSync } from "fs";
 import { createOctokit } from "../github/api/client";
 import { redactSecrets } from "../github/utils/sanitizer";
 import { collectSecretValues } from "../runner/secret-values";
+import { readRunnerInputs } from "../runner/run-plan";
 import {
   inlineCommentBufferPath,
   readBufferedComments,
@@ -155,12 +156,25 @@ async function main() {
   }
 
   await postBufferedComments(comments, {
-    classify: (bodies) =>
-      classifyComments(bodies, {
-        model: process.env.MODEL,
-        classifyModel: process.env.CLASSIFY_MODEL,
-        apiKey: process.env.API_KEY,
-      }),
+    classify: async (bodies) => {
+      try {
+        const runnerInputs = readRunnerInputs(process.env);
+        return await classifyComments(bodies, {
+          model: runnerInputs.model,
+          classifyModel: process.env.CLASSIFY_MODEL,
+          apiKey: runnerInputs.apiKey,
+          baseUrls: runnerInputs.baseUrls,
+        });
+      } catch (error) {
+        // Invalid runner configuration must not prevent the always() step
+        // from posting candidates, just like any other classification failure.
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(
+          `Classification configuration failed (${redactSecrets(message)}) — posting all unconfirmed comments`,
+        );
+        return null;
+      }
+    },
     post: gitHubPoster(
       GITHUB_TOKEN,
       REPO_OWNER,

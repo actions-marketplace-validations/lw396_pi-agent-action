@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fail if a workflow job that runs the agent, or .github/egress-firewall.yaml, breaks a rule in
-CLAUDE.md, "Security hardening for GitHub Actions". Run from the repository root. A job runs the
+AGENTS.md, "Security hardening for GitHub Actions". Run from the repository root. A job runs the
 agent when it runs this action (published, or a local action with a pi_args input), or when it or a
 local action it uses mentions the pi package, PI_PACKAGE.
 """
@@ -9,13 +9,14 @@ import json
 import pathlib
 import subprocess
 import sys
+from typing import NoReturn
 
 FIREWALL_RUNNER = "ubuntu-24.04-firewall"
 WORKFLOW_DIR = pathlib.Path(".github/workflows")
 POLICY_PATH = pathlib.Path(".github/egress-firewall.yaml")
 PI_PACKAGE = "@earendil-works/pi-coding-agent"
 AGENT_ACTIONS = ("lw396/pi-agent-action",)
-HELP = 'See CLAUDE.md, "Security hardening for GitHub Actions".'
+HELP = 'See AGENTS.md, "Security hardening for GitHub Actions".'
 # A '*' in an allowed_tools tool name may only pick out MCP tools. Anywhere else it can name
 # bash, edit or write, and turns the allowlist off without saying so.
 MCP_TOOL_PREFIX = "mcp__"
@@ -25,7 +26,7 @@ EXEMPT_FROM_FIREWALL_RUNNER: dict[str, str] = {}
 EXEMPT_FROM_TOOL_ALLOWLIST: dict[str, str] = {}
 
 
-def stop(message: str):
+def stop(message: str) -> NoReturn:
     sys.exit(f"::error::{message}")
 
 
