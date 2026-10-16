@@ -29,6 +29,7 @@ const ENV_KEYS = [
   "RUNNER_TEMP",
   "HOME",
   "FAUX_TEST_API_KEY",
+  "PATH",
   ...OIDC_AND_INPUT_VARS,
 ];
 

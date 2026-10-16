@@ -19,6 +19,7 @@ import { createModelRuntime, type ModelRuntimeOptions } from "./model-runtime";
 import { isolatedBashTool } from "./bash-isolation";
 import { commentRedactionExtension } from "./comment-redaction";
 import { parsePiArgs } from "./pi-args";
+import { putBundledPiOnPath } from "./pi-cli";
 import { resolvePackages } from "./packages";
 import { expandSlashCommand } from "./slash-command";
 import {
@@ -226,6 +227,8 @@ export async function runPi(
   const agentDir = await mkdtemp(
     join(process.env.RUNNER_TEMP || tmpdir(), "pi-agent-"),
   );
+  // `pi` on PATH is the pi this run uses, for processes the session starts.
+  await putBundledPiOnPath();
   // Settings live only in memory: neither ~/.pi/agent/settings.json nor the
   // repository's .pi/settings.json is read, and nothing is written, so the
   // agent cannot change configuration later processes in the job would read
