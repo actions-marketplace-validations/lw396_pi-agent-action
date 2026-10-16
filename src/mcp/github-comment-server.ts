@@ -7,6 +7,7 @@ import { GITHUB_API_URL } from "../github/api/config";
 import { Octokit } from "@octokit/rest";
 import { updateComment } from "../github/operations/comments/update-comment";
 import { redactSecrets, sanitizeContent } from "../github/utils/sanitizer";
+import { currentGitHubToken } from "./github-token";
 
 // Get repository information from environment variables
 const REPO_OWNER = process.env.REPO_OWNER;
@@ -32,13 +33,10 @@ server.tool(
   },
   async ({ body }) => {
     try {
-      const githubToken = process.env.GITHUB_TOKEN;
+      const githubToken = await currentGitHubToken();
       const trackingCommentId = process.env.TRACKING_COMMENT_ID;
       const eventName = process.env.GITHUB_EVENT_NAME;
 
-      if (!githubToken) {
-        throw new Error("GITHUB_TOKEN environment variable is required");
-      }
       if (!trackingCommentId) {
         throw new Error("TRACKING_COMMENT_ID environment variable is required");
       }
