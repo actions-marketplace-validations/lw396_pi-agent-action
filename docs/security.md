@@ -173,6 +173,8 @@ Without a `github_token` input, the action exchanges the workflow's GitHub OIDC 
 
 Tokens get Contents, Pull Requests and Issues by default. The service refuses a request for more than the app has. The app has no Workflows permission, so the agent cannot change files under `.github/workflows/`.
 
+An app token expires after an hour. For longer runs the action gets a new one every 45 minutes the same way, before the old one expires, and revokes the old one 5 minutes later. The OIDC request credentials stay in the action's memory and are removed from the environment before the agent starts, so the agent cannot get tokens itself. The action's MCP servers fetch the current token from a local endpoint on 127.0.0.1 that answers only with a random key, which is in the servers' environment where the token used to be. With a `github_token` input nothing is refreshed: the workflow's `GITHUB_TOKEN` lasts for the whole job.
+
 ## Commit Signing
 
 By default, commits made by the agent are unsigned. You can enable commit signing using one of two methods:

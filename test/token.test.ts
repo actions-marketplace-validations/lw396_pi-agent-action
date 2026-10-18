@@ -1,6 +1,8 @@
 import { describe, expect, test, beforeEach, afterEach, spyOn } from "bun:test";
 import * as core from "@actions/core";
 import {
+  appTokenMinter,
+  revokeAppToken,
   setupGitHubToken,
   WorkflowValidationSkipError,
 } from "../src/github/token";
@@ -175,5 +177,92 @@ describe("setupGitHubToken", () => {
 
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(warningSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("appTokenMinter", () => {
+  let fetchSpy: any;
+  let setSecretSpy: any;
+
+  beforeEach(() => {
+    setSecretSpy = spyOn(core, "setSecret").mockImplementation(() => {});
+    fetchSpy = spyOn(global, "fetch").mockImplementation((async (
+      input: string | URL,
+    ) =>
+      String(input).startsWith("https://oidc.example")
+        ? Response.json({ value: "oidc-token" })
+        : Response.json({ token: "new-app-token" })) as any);
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+    setSecretSpy.mockRestore();
+  });
+
+  test("is undefined without the OIDC request pair", () => {
+    expect(appTokenMinter({})).toBeUndefined();
+  });
+
+  test("keeps the OIDC request pair, so it works after the Runner hides it", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ACTIONS_ID_TOKEN_REQUEST_URL: "https://oidc.example/token?api-version=2",
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-token",
+    };
+    const mint = appTokenMinter(env)!;
+    delete env.ACTIONS_ID_TOKEN_REQUEST_URL;
+    delete env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+
+    await expect(mint()).resolves.toBe("new-app-token");
+
+    const [oidcUrl, oidcInit] = fetchSpy.mock.calls[0];
+    const url = new URL(String(oidcUrl));
+    expect(url.searchParams.get("api-version")).toBe("2");
+    expect(url.searchParams.get("audience")).toBe("pi-agent-action");
+    expect(oidcInit.headers.Authorization).toBe("Bearer request-token");
+    const [exchangeUrl, exchangeInit] = fetchSpy.mock.calls[1];
+    expect(exchangeUrl).toBe(
+      "https://pi-agent-action.8d7h5sbqdh.workers.dev/api/github/github-app-token-exchange",
+    );
+    expect(exchangeInit.headers.Authorization).toBe("Bearer oidc-token");
+    expect(setSecretSpy).toHaveBeenCalledWith("new-app-token");
+  });
+
+  test("throws when the OIDC token request fails", async () => {
+    fetchSpy.mockImplementation(
+      async () => new Response("", { status: 403, statusText: "Forbidden" }),
+    );
+    const mint = appTokenMinter({
+      ACTIONS_ID_TOKEN_REQUEST_URL: "https://oidc.example/token",
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-token",
+    })!;
+
+    await expect(mint()).rejects.toThrow("403");
+  });
+});
+
+describe("revokeAppToken", () => {
+  let fetchSpy: any;
+
+  afterEach(() => fetchSpy.mockRestore());
+
+  test("deletes the installation token with that token", async () => {
+    fetchSpy = spyOn(global, "fetch").mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+
+    await revokeAppToken("old-token");
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(String(url)).toEndWith("/installation/token");
+    expect(init.method).toBe("DELETE");
+    expect(init.headers.Authorization).toBe("Bearer old-token");
+  });
+
+  test("throws when GitHub does not confirm", async () => {
+    fetchSpy = spyOn(global, "fetch").mockResolvedValue(
+      new Response(null, { status: 401, statusText: "Unauthorized" }),
+    );
+
+    await expect(revokeAppToken("old-token")).rejects.toThrow("401");
   });
 });

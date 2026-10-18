@@ -10,6 +10,7 @@ import { GITHUB_API_URL } from "../github/api/config";
 import { isBinaryContent } from "./binary-detection";
 import { validatePathWithinRepo } from "./path-validation";
 import { updateGitReference } from "./update-git-reference";
+import { currentGitHubToken } from "./github-token";
 import {
   commitFilesInputSchema,
   deleteFilesInputSchema,
@@ -206,10 +207,7 @@ server.tool(
     const repo = REPO_NAME;
     const branch = BRANCH_NAME;
     try {
-      const githubToken = process.env.GITHUB_TOKEN;
-      if (!githubToken) {
-        throw new Error("GITHUB_TOKEN environment variable is required");
-      }
+      const githubToken = await currentGitHubToken();
 
       // Validate all paths are within repository root and get full/relative paths
       const resolvedRepoDir = resolve(REPO_DIR);
@@ -416,10 +414,7 @@ server.tool(
     const repo = REPO_NAME;
     const branch = BRANCH_NAME;
     try {
-      const githubToken = process.env.GITHUB_TOKEN;
-      if (!githubToken) {
-        throw new Error("GITHUB_TOKEN environment variable is required");
-      }
+      const githubToken = await currentGitHubToken();
 
       // Validate all paths are within the repository root and normalize them to
       // repo-relative paths for the git tree entries. This mirrors the validation

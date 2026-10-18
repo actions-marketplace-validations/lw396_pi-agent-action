@@ -2,6 +2,10 @@
 
 import * as core from "@actions/core";
 import { retryWithBackoff } from "../utils/retry";
+import { GITHUB_API_URL } from "./api/config";
+
+/** The audience of the OIDC token the Token exchange service accepts. */
+const OIDC_AUDIENCE = "pi-agent-action";
 
 export class WorkflowValidationSkipError extends Error {
   constructor(message: string) {
@@ -55,7 +59,7 @@ function isWorkflowValidationError(
 
 async function getOidcToken(): Promise<string> {
   try {
-    const oidcToken = await core.getIDToken("pi-agent-action");
+    const oidcToken = await core.getIDToken(OIDC_AUDIENCE);
 
     return oidcToken;
   } catch (error) {
@@ -188,4 +192,81 @@ export async function setupGitHubToken(): Promise<string> {
 
   console.log("Using GITHUB_TOKEN from OIDC");
   return appToken;
+}
+
+/** Gets a new app token, as setupGitHubToken() got the first one. */
+export type AppTokenMinter = () => Promise<string>;
+
+/**
+ * A function that gets a new pi-agent-action app token, for runs longer than
+ * the token's hour. It keeps the OIDC request pair from this environment: the
+ * Runner removes the pair from process.env before the agent starts
+ * (src/runner/run-pi.ts), and core.getIDToken() reads it from there. Undefined
+ * without the pair, which the first exchange needed too.
+ */
+export function appTokenMinter(
+  env: NodeJS.ProcessEnv = process.env,
+): AppTokenMinter | undefined {
+  const requestUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+  const requestToken = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+  if (!requestUrl || !requestToken) return undefined;
+  const permissions = parseAdditionalPermissions();
+  return async () => {
+    const oidcToken = await requestOidcToken(requestUrl, requestToken);
+    const appToken = await exchangeForAppToken(oidcToken, permissions);
+    core.setSecret(appToken);
+    return appToken;
+  };
+}
+
+/** What core.getIDToken() does, with the request pair passed in. */
+async function requestOidcToken(
+  requestUrl: string,
+  requestToken: string,
+): Promise<string> {
+  let url: URL;
+  try {
+    url = new URL(requestUrl);
+  } catch {
+    throw new Error(
+      "Could not fetch an OIDC token: ACTIONS_ID_TOKEN_REQUEST_URL is not a URL",
+    );
+  }
+  url.searchParams.set("audience", OIDC_AUDIENCE);
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${requestToken}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Could not fetch an OIDC token: ${response.status} ${response.statusText}`,
+    );
+  }
+  const { value } = (await response.json()) as { value?: string };
+  if (!value) {
+    throw new Error("Could not fetch an OIDC token: the response has none");
+  }
+  core.setSecret(value);
+  return value;
+}
+
+/**
+ * Revoke an installation token, as the "Revoke app token" step in action.yml
+ * does. Throws when GitHub does not confirm.
+ */
+export async function revokeAppToken(token: string): Promise<void> {
+  const response = await fetch(`${GITHUB_API_URL}/installation/token`, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (response.status !== 204) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
 }

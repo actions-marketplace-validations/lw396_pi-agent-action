@@ -136,6 +136,32 @@ describe("prepareMcpConfig", () => {
     );
   });
 
+  test("gives the servers the token broker instead of the token when there is one", async () => {
+    const result = (await prepareMcpConfig({
+      githubToken: "test-token",
+      tokenBroker: { url: "http://127.0.0.1:1234/", key: "broker-key" },
+      owner: "test-owner",
+      repo: "test-repo",
+      branch: "test-branch",
+      baseBranch: "main",
+      allowedTools: ["mcp__github_inline_comment__create_inline_comment"],
+      context: { ...mockContextWithSigning, isPR: true },
+      mode: "tag",
+    })) as Record<string, any>;
+
+    for (const name of [
+      "github_comment",
+      "github_file_ops",
+      "github_inline_comment",
+    ]) {
+      expect(result[name].env.GITHUB_TOKEN_BROKER_URL).toBe(
+        "http://127.0.0.1:1234/",
+      );
+      expect(result[name].env.GITHUB_TOKEN_BROKER_KEY).toBe("broker-key");
+      expect(result[name].env.GITHUB_TOKEN).toBeUndefined();
+    }
+  });
+
   test("should include file ops server when commit signing is enabled", async () => {
     const result = await prepareMcpConfig({
       githubToken: "test-token",

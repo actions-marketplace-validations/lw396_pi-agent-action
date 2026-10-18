@@ -74,6 +74,7 @@ export async function prepareTagMode({
   octokit,
   githubToken,
   githubTokenSource,
+  tokenBroker,
   allowedTools: workflowAllowedTools,
   untrustedInput,
 }: PrepareOptions): Promise<PrepareResult> {
@@ -171,6 +172,7 @@ export async function prepareTagMode({
   // workflow's (the inline comment server, for example).
   const mcpServers = await prepareMcpConfig({
     githubToken,
+    tokenBroker,
     owner: context.repository.owner,
     repo: context.repository.repo,
     branch: branchInfo.agentBranch || branchInfo.currentBranch,

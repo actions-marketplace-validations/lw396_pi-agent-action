@@ -7,7 +7,15 @@
  */
 
 import * as core from "@actions/core";
-import { setupGitHubToken, WorkflowValidationSkipError } from "../github/token";
+import {
+  appTokenMinter,
+  revokeAppToken,
+  setupGitHubToken,
+  WorkflowValidationSkipError,
+} from "../github/token";
+import { GitHubTokenRefresher } from "../github/token-refresh";
+import { startTokenBroker, type TokenBroker } from "../github/token-broker";
+import { refreshRemoteToken } from "../github/operations/git-config";
 import { checkWritePermissions } from "../github/validation/permissions";
 import { createOctokit } from "../github/api/client";
 import type { Octokits } from "../github/api/client";
@@ -75,6 +83,9 @@ async function run() {
   let prepareError: string | undefined;
   let context: GitHubContext | undefined;
   let octokit: Octokits | undefined;
+  // Replace the app token before its hour runs out (none for github_token).
+  let tokenRefresher: GitHubTokenRefresher | undefined;
+  let tokenBroker: TokenBroker | undefined;
   // Paths reverted to the PR base branch, which cleanup must not commit back
   // onto the PR author's branch. Empty unless restoreConfigFromBase ran.
   let restoredConfigPaths: string[] = [];
@@ -112,6 +123,32 @@ async function run() {
     // Set GITHUB_TOKEN and GH_TOKEN in process env for downstream usage
     process.env.GITHUB_TOKEN = githubToken;
     process.env.GH_TOKEN = githubToken;
+
+    // An app token expires after an hour, and a run can take longer. Before
+    // the Runner hides the OIDC request pair from the agent, keep a way to
+    // get new ones, and update everything that holds the token: git and gh
+    // read GH_TOKEN or the origin URL, cleanup uses octokit, and the MCP
+    // servers ask the broker at each call.
+    const mint = process.env.OVERRIDE_GITHUB_TOKEN
+      ? undefined
+      : appTokenMinter();
+    if (mint) {
+      const refresher = new GitHubTokenRefresher({
+        token: githubToken,
+        mint,
+        revoke: revokeAppToken,
+      });
+      refresher.onRefresh(async (token) => {
+        githubToken = token;
+        octokit = createOctokit(token);
+        process.env.GITHUB_TOKEN = token;
+        process.env.GH_TOKEN = token;
+        await refreshRemoteToken(token);
+      });
+      refresher.start();
+      tokenRefresher = refresher;
+      tokenBroker = startTokenBroker(() => refresher.token);
+    }
 
     // Check write permissions for entity contexts, and for workflow_run
     // events, whose upstream run may have been started by an actor without
@@ -156,6 +193,10 @@ async function run() {
       githubTokenSource: process.env.OVERRIDE_GITHUB_TOKEN
         ? ("input" as const)
         : ("app" as const),
+      tokenBroker: tokenBroker && {
+        url: tokenBroker.url,
+        key: tokenBroker.key,
+      },
       allowedTools: runnerInputs.allowedTools,
       untrustedInput: runnerInputs.untrustedInput,
     };
@@ -309,6 +350,11 @@ async function run() {
         displayReport: process.env.DISPLAY_REPORT !== "false",
       });
     }
+
+    // Last: cleanup above may still need a fresh token. The token left
+    // current is the one the later steps get, and action.yml revokes it.
+    tokenBroker?.stop();
+    await tokenRefresher?.stop();
 
     // Set remaining action-level outputs
     core.setOutput("branch_name", agentBranch);
