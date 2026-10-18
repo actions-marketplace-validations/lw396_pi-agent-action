@@ -9,6 +9,7 @@ import {
   inlineCommentBufferPath,
   removeBufferedComment,
 } from "./inline-comment-buffer";
+import { currentGitHubToken } from "./github-token";
 
 // Get repository and PR information from environment variables
 const REPO_OWNER = process.env.REPO_OWNER;
@@ -92,12 +93,6 @@ server.tool(
   },
   async ({ path, body, line, startLine, side, commit_id, confirmed }) => {
     try {
-      const githubToken = process.env.GITHUB_TOKEN;
-
-      if (!githubToken) {
-        throw new Error("GITHUB_TOKEN environment variable is required");
-      }
-
       const owner = REPO_OWNER;
       const repo = REPO_NAME;
       const pull_number = parseInt(PR_NUMBER, 10);
@@ -153,7 +148,7 @@ server.tool(
       // If both startLine and line are provided, it's a multi-line comment
       const isSingleLine = !startLine;
 
-      const octokit = createOctokit(githubToken).rest;
+      const octokit = createOctokit(await currentGitHubToken()).rest;
 
       const pr = await octokit.pulls.get({
         owner,

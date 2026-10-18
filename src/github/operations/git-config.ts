@@ -143,6 +143,32 @@ export async function replaceCheckoutCredentials(
   }
 }
 
+const TOKEN_IN_URL = /^(https:\/\/x-access-token:)[^@]+(@.+)$/;
+
+/**
+ * Put a refreshed token in the origin URL, where replaceCheckoutCredentials()
+ * put the first one. Origin is left alone when it has no token in it: the
+ * credential helper reads GH_TOKEN, which the caller updates. Throws without
+ * git's output, which would show the URL.
+ */
+export async function refreshRemoteToken(githubToken: string): Promise<void> {
+  let url: string;
+  try {
+    url = (await $`git remote get-url origin`.quiet().text()).trim();
+  } catch {
+    // No checkout or no origin: nothing holds the token.
+    return;
+  }
+  const match = TOKEN_IN_URL.exec(url);
+  if (!match) return;
+  const refreshed = `${match[1]}${githubToken}${match[2]}`;
+  try {
+    await $`git remote set-url origin ${refreshed}`.quiet();
+  } catch {
+    throw new Error("git remote set-url origin failed");
+  }
+}
+
 /**
  * Configure git to use SSH signing for commits
  * This is an alternative to GitHub API-based commit signing (use_commit_signing)

@@ -14,6 +14,7 @@ export async function prepareAgentMode({
   context,
   octokit,
   githubToken,
+  tokenBroker,
   allowedTools,
   untrustedInput,
 }: PrepareOptions): Promise<PrepareResult> {
@@ -47,6 +48,7 @@ export async function prepareAgentMode({
   // The allowed_tools input decides which of the action's MCP servers start
   const mcpServers = await prepareMcpConfig({
     githubToken,
+    tokenBroker,
     owner: context.repository.owner,
     repo: context.repository.repo,
     branch: currentBranch,

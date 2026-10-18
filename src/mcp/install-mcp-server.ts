@@ -6,10 +6,16 @@ import { redactSecrets } from "../github/utils/sanitizer";
 import { Octokit } from "@octokit/rest";
 import type { AutoDetectedMode } from "../modes/detector";
 import type { McpServers } from "../runner/mcp-servers";
+import type { TokenBrokerAddress } from "../github/token-broker";
 import { inlineCommentBufferPath } from "./inline-comment-buffer";
 
 type PrepareConfigParams = {
   githubToken: string;
+  /**
+   * Where the servers get the current app token instead of githubToken, so
+   * they keep working after it is refreshed (src/github/token-refresh.ts).
+   */
+  tokenBroker?: TokenBrokerAddress;
   owner: string;
   repo: string;
   branch: string;
@@ -66,12 +72,29 @@ async function checkActionsReadPermission(
   }
 }
 
+/**
+ * The env that gives a server the GitHub token: the broker's address when
+ * there is one, so the token itself is not in the server's env.
+ */
+function githubTokenEnv(
+  githubToken: string,
+  tokenBroker: TokenBrokerAddress | undefined,
+): Record<string, string> {
+  return tokenBroker
+    ? {
+        GITHUB_TOKEN_BROKER_URL: tokenBroker.url,
+        GITHUB_TOKEN_BROKER_KEY: tokenBroker.key,
+      }
+    : { GITHUB_TOKEN: githubToken };
+}
+
 /** The action's own MCP servers, by name, that the run needs. */
 export async function prepareMcpConfig(
   params: PrepareConfigParams,
 ): Promise<McpServers> {
   const {
     githubToken,
+    tokenBroker,
     owner,
     repo,
     branch,
@@ -120,7 +143,7 @@ export async function prepareMcpConfig(
         command: "bun",
         args: bunServerArgs("src/mcp/github-comment-server.ts"),
         env: {
-          GITHUB_TOKEN: githubToken,
+          ...githubTokenEnv(githubToken, tokenBroker),
           REPO_OWNER: owner,
           REPO_NAME: repo,
           ...(trackingCommentId && { TRACKING_COMMENT_ID: trackingCommentId }),
@@ -136,7 +159,7 @@ export async function prepareMcpConfig(
         command: "bun",
         args: bunServerArgs("src/mcp/github-file-ops-server.ts"),
         env: {
-          GITHUB_TOKEN: githubToken,
+          ...githubTokenEnv(githubToken, tokenBroker),
           REPO_OWNER: owner,
           REPO_NAME: repo,
           BRANCH_NAME: branch,
@@ -159,7 +182,7 @@ export async function prepareMcpConfig(
         command: "bun",
         args: bunServerArgs("src/mcp/github-inline-comment-server.ts"),
         env: {
-          GITHUB_TOKEN: githubToken,
+          ...githubTokenEnv(githubToken, tokenBroker),
           REPO_OWNER: owner,
           REPO_NAME: repo,
           PR_NUMBER: context.entityNumber?.toString() || "",

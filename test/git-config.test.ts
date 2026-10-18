@@ -5,6 +5,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   configureGitAuth,
+  refreshRemoteToken,
   replaceCheckoutCredentials,
 } from "../src/github/operations/git-config";
 import { GITHUB_SERVER_URL } from "../src/github/api/config";
@@ -216,6 +217,36 @@ describe("git-config", () => {
       expect(gitConfigGetAll(EXTRAHEADER_KEY)).toBe("");
       expect(remoteUrl()).toBe(
         `https://x-access-token:test-token@${SERVER.host}/test-owner/test-repo.git`,
+      );
+    });
+  });
+
+  describe("refreshRemoteToken", () => {
+    test("replaces the token in the origin URL", async () => {
+      await replaceCheckoutCredentials(
+        "old-token",
+        createMockAutomationContext(),
+        false,
+      );
+
+      await refreshRemoteToken("new-token");
+
+      expect(remoteUrl()).toBe(
+        `https://x-access-token:new-token@${SERVER.host}/test-owner/test-repo.git`,
+      );
+    });
+
+    test("leaves an origin URL without a token alone", async () => {
+      await replaceCheckoutCredentials(
+        "helper-token",
+        createMockAutomationContext(),
+        true,
+      );
+
+      await refreshRemoteToken("new-token");
+
+      expect(remoteUrl()).toBe(
+        `https://${SERVER.host}/test-owner/test-repo.git`,
       );
     });
   });
