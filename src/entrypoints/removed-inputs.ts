@@ -31,7 +31,6 @@ export const REMOVED_INPUTS: Record<string, string> = {
     "pi has no Microsoft Foundry provider; choose another provider in model",
   claude_args:
     "use model, pi_args, allowed_tools, disallowed_tools and json_schema",
-  settings: "pi settings files are not read; remove the input",
   plugins: "pi has no Claude Code plugins; remove the input",
   plugin_marketplaces: "pi has no Claude Code plugins; remove the input",
   path_to_claude_code_executable:

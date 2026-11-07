@@ -86,6 +86,16 @@ inputs:
     description: "Additional pi command-line flags. Supported: --thinking, --system-prompt, --append-system-prompt, --tools, --exclude-tools, --no-tools, --no-builtin-tools, --no-skills, --no-prompt-templates, --no-context-files. Any other flag fails the run."
     required: false
     default: ""
+  settings:
+    description: >-
+      Additional native pi settings as a JSON object, including plugin-specific
+      keys. Objects merge recursively; arrays and other values replace matching
+      values. Action-specific inputs take precedence. When set, the merged
+      settings.json lives only in this run's temporary agent directory, shared
+      by the SDK and plugins. Repository and global settings are not read or
+      changed. Trusted workflow configuration only, not issue/PR content.
+    required: false
+    default: ""
   max_retries:
     description: >-
       How many times pi retries a model request that failed with a transient
@@ -109,9 +119,10 @@ inputs:
     description: >-
       Trusted pi packages, one native source per line: npm:NAME[@VERSION]
       or git:HOST/OWNER/REPO[@REF] (also explicit HTTP(S) after git:).
-      Installed outside the checkout for this run only; no settings files
-      are read or changed. Explicit package skills and prompts load even
-      with --no-skills or --no-prompt-templates in pi_args. Needs npm and
+      Installed outside the checkout for this run only; repository and global
+      settings files are not read or changed. Explicit package skills and
+      prompts load even with --no-skills or --no-prompt-templates in pi_args.
+      Needs npm and
       git for their respective sources. Extensions and dependency install
       scripts run with the action's permissions, not in a tool sandbox.
     required: false
@@ -273,10 +284,6 @@ inputs:
     description: "Removed in pi-agent-action. Setting it fails the run."
     required: false
     deprecationMessage: "claude_args was removed in pi-agent-action and fails the run. See https://github.com/lw396/pi-agent-action#migrating-from-claude-code-action"
-  settings:
-    description: "Removed in pi-agent-action. Setting it fails the run."
-    required: false
-    deprecationMessage: "settings was removed in pi-agent-action and fails the run. See https://github.com/lw396/pi-agent-action#migrating-from-claude-code-action"
   plugins:
     description: "Removed in pi-agent-action. Setting it fails the run."
     required: false
@@ -461,6 +468,7 @@ runs:
         API_KEY: ${{ inputs.api_key }}
         PI_ARGS: ${{ inputs.pi_args }}
         INPUT_MAX_RETRIES: ${{ inputs.max_retries }}
+        INPUT_SETTINGS: ${{ inputs.settings }}
         INPUT_SKILLS: ${{ inputs.skills }}
         INPUT_PACKAGES: ${{ inputs.packages }}
         INPUT_ALLOWED_TOOLS: ${{ inputs.allowed_tools }}

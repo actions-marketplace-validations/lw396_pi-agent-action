@@ -25,6 +25,28 @@ env:
   OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
 ```
 
+## Additional pi settings
+
+Use `settings` for a native pi settings JSON object, including configuration owned by plugins:
+
+```yaml
+with:
+  settings: |
+    {
+      "subagents": {
+        "defaultModel": "opencode-go/deepseek-v4.1-flash"
+      }
+    }
+```
+
+This configures an already installed plugin; it does not install subagents or make it part of the action. Install trusted plugins separately, for example through `packages`.
+
+- Configuration is **added**, not replaced wholesale: nested objects merge recursively, unspecified keys remain, and matching scalars, arrays and `null` replace the previous value. Arrays are not concatenated.
+- Action-specific inputs win. In particular, `max_retries` (including its default of `10`) overrides `settings.retry.maxRetries`, while other `retry` fields are preserved. The required `model` and explicit `pi_args` also keep their precedence.
+- With this input, the SDK and file-reading plugins share `settings.json` in a private, per-run agent directory outside the checkout. `PI_CODING_AGENT_DIR` points there during execution, so plugins using pi's `getAgentDir()` and child processes inheriting the environment can find it. SDK setters persist there and reloads retain the configuration. No repository or global settings are read or changed. Without this input, settings remain in memory as before.
+- Supply JSON, not a file path or Claude Code settings. Unknown plugin keys are preserved; malformed JSON, non-object roots and prototype-mutating keys (`__proto__`, `constructor`, `prototype`) are rejected without echoing their values.
+- Settings are trusted workflow configuration, not a sandbox: native pi settings can change shell commands, load executable extensions and install packages. Do not derive this input from issue/PR text or model output. Pass credentials through the provider environment variables or `api_key`, not this file. A child pi process remains outside the parent's tool allowlist.
+
 ## Custom OpenAI endpoints
 
 Set `OPENAI_BASE_URL` in the action step's `env:` to route the `openai` provider through any trusted endpoint implementing the OpenAI Responses API. This can be a third-party model service, a self-hosted gateway or a local server; the action does not depend on a particular service or provider extension.
@@ -175,7 +197,7 @@ with:
 - All resources declared by the package manifest are loaded; otherwise pi uses its conventional resource directories. Explicit package skills and prompts survive `--no-skills` and `--no-prompt-templates` in `pi_args`, which only disable automatic discovery. Themes are resolved too, but this headless action has no interactive theme display.
 - Installation or resource loading failures stop the run before calling the model. A package with no loadable pi resources fails too, including a missing package that pi would otherwise skip in offline mode. These are Runner startup failures, not `skills` prepare failures.
 - Package tools still need `allowed_tools` rules; `disallowed_tools` takes precedence. Use the actual tool names the package registers, not the package name.
-- During the run, `pi` on `PATH` is the pi CLI bundled with the action, the version the Runner runs, so packages that start pi processes find it; [pi-subagents](https://github.com/nicobailon/pi-subagents) runs each sub-agent that way. It needs `node` on `PATH` (GitHub-hosted runners have it) and is not set up on Windows. A pi process started this way is a separate run outside `allowed_tools`: only the tools it was started with limit it. It reads `~/.pi/agent` and the environment, not the action's model settings, so `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `api_key` and `max_retries` do not reach it; pass the provider key through `env:`.
+- During the run, `pi` on `PATH` is the pi CLI bundled with the action, the version the Runner runs, so packages that start pi processes find it; [pi-subagents](https://github.com/nicobailon/pi-subagents) runs each sub-agent that way. It needs `node` on `PATH` (GitHub-hosted runners have it) and is not set up on Windows. A pi process started this way is a separate run outside `allowed_tools`: only the tools it was started with limit it. Without `settings`, it reads its own agent directory and environment, not the Runner's in-memory configuration. With `settings`, it inherits `PI_CODING_AGENT_DIR` and can read the temporary merged settings file (including `retry.maxRetries`). The parent's `model`, SDK endpoint overrides and `api_key` are not automatically forwarded; pass provider keys through `env:` and configure the child process explicitly.
 
 **Packages are trusted code, not sandboxed tools.** Extensions execute inside the action process, and dependency installation may run lifecycle scripts. They can access files, network and credentials directly, outside `allowed_tools` and bash isolation. Review packages and their dependencies, set sources only in trusted workflow configuration, and never derive them from issue/PR text or model output. Keep minimal workflow permissions and the runner's egress firewall; allow only the exact registry/Git hosts and package endpoints the job needs. See [Package trust](./security.md#package-trust).
 

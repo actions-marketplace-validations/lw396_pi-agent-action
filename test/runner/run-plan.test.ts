@@ -22,6 +22,7 @@ describe("readRunnerInputs", () => {
       OPENAI_BASE_URL: " https://proxy.example.com/prefix/v1/ ",
       PI_ARGS: "--thinking high",
       INPUT_MAX_RETRIES: "5",
+      INPUT_SETTINGS: '{"plugin":{"enabled":true}}',
       INPUT_ALLOWED_TOOLS: "Bash(npm test)",
       INPUT_DISALLOWED_TOOLS: "Write",
       JSON_SCHEMA: '{"type":"object"}',
@@ -36,6 +37,7 @@ describe("readRunnerInputs", () => {
       baseUrls: { openai: "https://proxy.example.com/prefix/v1" },
       piArgs: "--thinking high",
       maxRetries: 5,
+      settings: { plugin: { enabled: true } },
       allowedTools: [
         { text: "Bash(npm test)", tool: "bash", pattern: "npm test" },
       ],

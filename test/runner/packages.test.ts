@@ -262,7 +262,7 @@ describe("packages in the Runner", () => {
     async (allowed, disallowed, permitted) => {
       await servePackage({
         "extensions/probe.ts": `
-        import { Type } from "@earendil-works/pi-ai";
+        import { Type } from "typebox";
         import { defineTool } from "@earendil-works/pi-coding-agent";
         export default function (pi) {
           pi.registerTool(defineTool({
@@ -312,22 +312,30 @@ describe("packages in the Runner", () => {
     },
   );
 
-  test("reports a package installation failure without calling the model", async () => {
-    await servePackage({});
-    const { faux, modelRuntime, model } = await fauxRuntime([
-      fauxAssistantMessage("unused"),
-    ]);
+  test.each([
+    ["npm:missing-package@1.2.3"],
+    [NPM_SOURCE, "npm:missing-package@1.2.3"],
+  ])(
+    "rejects failed package installations in %p without calling the model",
+    async (...packages) => {
+      await servePackage({ "skills/package-review/SKILL.md": SKILL });
+      const { faux, modelRuntime, model } = await fauxRuntime([
+        fauxAssistantMessage("unused"),
+      ]);
 
-    await expect(
-      runPi("Review.", {
-        model,
-        modelRuntime,
-        cwd: getScratch().cwd,
-        packages: ["npm:missing-package@1.2.3"],
-      }),
-    ).rejects.toThrow("packages: installation or loading failed");
-    expect(faux.state.callCount).toBe(0);
-  });
+      await expect(
+        runPi("Review.", {
+          model,
+          modelRuntime,
+          cwd: getScratch().cwd,
+          packages,
+        }),
+      ).rejects.toThrow(
+        "packages: installation or loading failed: npm:missing-package@1.2.3 has no loadable pi resources",
+      );
+      expect(faux.state.callCount).toBe(0);
+    },
+  );
 
   test("fails before calling the model when a package extension cannot load", async () => {
     await servePackage({

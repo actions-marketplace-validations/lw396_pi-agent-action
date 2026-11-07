@@ -302,7 +302,7 @@ describe("tool permissions", () => {
     // An MCP-style tool, and a tool that runs bash through ctx.executeTool(),
     // the way codemode scripts call tools.
     const EXTENSION = `
-      import { Type } from "@earendil-works/pi-ai";
+      import { Type } from "typebox";
       export default function (pi) {
         pi.registerTool({
           name: "mcp__probe__ping",

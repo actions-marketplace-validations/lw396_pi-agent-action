@@ -3,6 +3,7 @@ import { readBaseUrls, type ModelRuntimeOptions } from "./model-runtime";
 import type { RunnerOptions } from "./run-pi";
 import { parseSkills, type SkillInstall } from "./skills";
 import { parsePackages } from "./packages";
+import { parseSettings, type RunSettings } from "./settings";
 import { parseToolRules, type ToolRule } from "./tool-rules";
 
 /**
@@ -15,6 +16,8 @@ export type RunnerInputs = Required<ModelRuntimeOptions> & {
   piArgs?: string;
   /** The max_retries input: pi's retry.maxRetries for transient model errors. */
   maxRetries: number;
+  /** Additive native pi settings, including plugin-specific keys. */
+  settings?: RunSettings;
   /** The allowed_tools input, which also decides the action's MCP servers. */
   allowedTools: ToolRule[];
   disallowedTools: ToolRule[];
@@ -88,6 +91,7 @@ export function readRunnerInputs(env: NodeJS.ProcessEnv): RunnerInputs {
     baseUrls: readBaseUrls(env),
     piArgs: env.PI_ARGS,
     maxRetries: parseMaxRetries(env.INPUT_MAX_RETRIES),
+    settings: parseSettings(env.INPUT_SETTINGS),
     allowedTools: parseToolRules(env.INPUT_ALLOWED_TOOLS, "allowed_tools"),
     disallowedTools: parseToolRules(
       env.INPUT_DISALLOWED_TOOLS,
@@ -118,6 +122,7 @@ export function runnerOptions(
     baseUrls: inputs.baseUrls,
     piArgs: inputs.piArgs,
     maxRetries: inputs.maxRetries,
+    settings: inputs.settings,
     packages: inputs.packages,
     // The mode's own rules come first, then the workflow's allowed_tools.
     allowedTools: [

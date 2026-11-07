@@ -71,6 +71,8 @@ Running commands other than `git add`, `commit` and `push` needs `allowed_tools`
 | `max_retries` | How many times pi retries a model request that failed with a transient error (overload, rate limit, 5xx, network). Waits double from 2 s up to 60 s, so 10 retries cover about 6 minutes of outage; `0` disables retries                                           | `10`    |
 | `pi_args`     | Extra pi flags. Supported: `--thinking`, `--system-prompt`, `--append-system-prompt`, `--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `--no-skills`, `--no-prompt-templates`, `--no-context-files`. Any other flag fails the run                 | `""`    |
 
+The `settings` input (default `""`) accepts a native pi JSON object to recursively merge into this run's settings, preserving unspecified keys and plugin fields. Arrays replace rather than concatenate; action-specific inputs take precedence. See [Additional pi settings](./configuration.md#additional-pi-settings) for examples and trust considerations.
+
 ### Prompt and output
 
 | Input                | Description                                                                                                                                                                                                                                                                    | Default |
@@ -128,7 +130,7 @@ See [Tool permissions](./security.md#tool-permissions) for the rule syntax and w
 | `bot_name`               | GitHub username for commit authorship                                                                                                                              | `pi-agent-action[bot]` |
 | `path_to_bun_executable` | Use this Bun instead of installing one, for Nix or custom containers                                                                                               | `""`                   |
 
-Inputs that only made sense for Claude Code (`anthropic_api_key`, `claude_args`, `settings`, ...) are still declared so that a workflow setting them fails with a migration hint. See [Removed inputs](../README.md#removed-inputs).
+Inputs that only made sense for Claude Code (`anthropic_api_key`, `claude_args`, ...) are still declared so that a workflow setting them fails with a migration hint. See [Removed inputs](../README.md#removed-inputs).
 
 ## Outputs
 

@@ -57,9 +57,11 @@ export async function resolvePackages(
 ): Promise<PackagePaths> {
   const manager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
   try {
-    const resources = await manager.resolveExtensionSources(sources, {
-      temporary: true,
-    });
+    const { extensions, skills, prompts, themes } =
+      await manager.resolveExtensionSources(sources, { temporary: true });
+    // Only resource arrays belong here; SDK diagnostics such as installFailures
+    // are not resources. The check below still rejects every missing source.
+    const resources = { extensions, skills, prompts, themes };
     const all = Object.values(resources).flat();
     for (const source of sources) {
       if (

@@ -23,9 +23,9 @@ describe("assertNoRemovedInputs", () => {
   test("lists every removed input that is set", () => {
     expect(() =>
       assertNoRemovedInputs(
-        inputs({ anthropic_api_key: "sk-ant-x", settings: "{}" }),
+        inputs({ anthropic_api_key: "sk-ant-x", plugins: "example" }),
       ),
-    ).toThrow(/anthropic_api_key[\s\S]*settings/);
+    ).toThrow(/anthropic_api_key[\s\S]*plugins/);
   });
 
   test("fails on include_fix_links, whose links opened Claude Code", () => {
@@ -51,6 +51,12 @@ describe("assertNoRemovedInputs", () => {
           path_to_claude_code_executable: "",
         }),
       ),
+    ).not.toThrow();
+  });
+
+  test("accepts settings as an active native pi input", () => {
+    expect(() =>
+      assertNoRemovedInputs(inputs({ settings: "{}" })),
     ).not.toThrow();
   });
 

@@ -9,7 +9,6 @@ import {
   ModelRuntime,
   resolveCliModel,
   SessionManager,
-  SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
   type ToolDefinition,
@@ -21,6 +20,7 @@ import { commentRedactionExtension } from "./comment-redaction";
 import { parsePiArgs } from "./pi-args";
 import { putBundledPiOnPath } from "./pi-cli";
 import { resolvePackages } from "./packages";
+import { withRunSettings, type RunSettings } from "./settings";
 import { expandSlashCommand } from "./slash-command";
 import {
   writeExecutionFile,
@@ -67,6 +67,8 @@ export type RunnerOptions = ModelRuntimeOptions & {
    * default.
    */
   maxRetries?: number;
+  /** Additive settings JSON from trusted workflow configuration. */
+  settings?: RunSettings;
   /**
    * The allowed_tools input, plus the mode's own rules. Calls to tools other
    * than the read-only ones must match a rule.
@@ -223,163 +225,162 @@ export async function runPi(
   );
 
   // A per-run pi directory, outside the checkout and away from ~/.pi/agent.
-  // Only ephemeral packages and runtime logs live here, not saved settings.
+  // Packages, logs and any workflow-supplied settings stay inside this run.
   const agentDir = await mkdtemp(
     join(process.env.RUNNER_TEMP || tmpdir(), "pi-agent-"),
   );
   // `pi` on PATH is the pi this run uses, for processes the session starts.
   await putBundledPiOnPath();
-  // Settings live only in memory: neither ~/.pi/agent/settings.json nor the
-  // repository's .pi/settings.json is read, and nothing is written, so the
-  // agent cannot change configuration later processes in the job would read
-  // (docs/development/upstream-divergence.md). Pass every setting here at
-  // once: values applied afterwards with applyOverrides() are lost on reload
-  // (test/pi-sdk/settings.test.ts).
-  const settingsManager = SettingsManager.inMemory(
-    options.maxRetries === undefined
-      ? {}
-      : { retry: { maxRetries: options.maxRetries } },
-  );
-  const packagePaths = await resolvePackages(
-    options.packages ?? [],
-    cwd,
+  return withRunSettings(
     agentDir,
-    settingsManager,
-  );
-  const resourceLoader = new DefaultResourceLoader({
-    cwd,
-    agentDir,
-    settingsManager,
-    extensionFactories: [
-      toolPermissionsExtension(toolPermissions, auditCollector.denied),
-      createCodemodeExtension(),
-      commentRedactionExtension(),
-      ...(structuredOutput ? [structuredOutput.extension] : []),
-      ...mcpServerExtensions(
-        options.mcpServers ?? {},
-        join(agentDir, "mcp.log"),
-      ),
-    ],
-    ...packagePaths,
-    additionalSkillPaths: [
-      ...(options.skillsDir ? [options.skillsDir] : []),
-      ...(packagePaths.additionalSkillPaths ?? []),
-    ],
-    ...piArgs.resources,
-  });
-  try {
-    await resourceLoader.reload();
-  } catch (error) {
-    if (!options.packages?.length) throw error;
-    throw new Error(
-      `packages: installation or loading failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (options.packages?.length) {
-    const errors = resourceLoader.getExtensions().errors;
-    if (errors.length) {
-      throw new Error(
-        `packages: extension loading failed: ${errors.map((error) => `${error.path}: ${error.error}`).join("; ")}`,
+    options.settings,
+    options.maxRetries,
+    async (settingsManager) => {
+      const packagePaths = await resolvePackages(
+        options.packages ?? [],
+        cwd,
+        agentDir,
+        settingsManager,
       );
-    }
-    const skills = resourceLoader.getSkills();
-    const prompts = resourceLoader.getPrompts();
-    const themes = resourceLoader.getThemes();
-    const loadedPaths = new Set([
-      ...skills.skills.map((skill) => skill.filePath),
-      ...prompts.prompts.map((prompt) => prompt.filePath),
-      ...themes.themes.map((theme) => theme.sourceInfo?.path),
-    ]);
-    const failed = [
-      ...skills.diagnostics,
-      ...prompts.diagnostics,
-      ...themes.diagnostics,
-    ].filter(
-      (diagnostic) =>
-        diagnostic.type !== "collision" &&
-        diagnostic.path?.startsWith(`${agentDir}${sep}`) &&
-        !loadedPaths.has(diagnostic.path),
-    );
-    // pi warns and skips invalid resources. Fail on skipped package resources,
-    // but retain its normal warnings for resources that did load and collisions.
-    if (failed.length) {
-      throw new Error(
-        `packages: resource loading failed: ${failed.map((diagnostic) => `${diagnostic.path}: ${diagnostic.message}`).join("; ")}`,
+      const resourceLoader = new DefaultResourceLoader({
+        cwd,
+        agentDir,
+        settingsManager,
+        extensionFactories: [
+          toolPermissionsExtension(toolPermissions, auditCollector.denied),
+          createCodemodeExtension(),
+          commentRedactionExtension(),
+          ...(structuredOutput ? [structuredOutput.extension] : []),
+          ...mcpServerExtensions(
+            options.mcpServers ?? {},
+            join(agentDir, "mcp.log"),
+          ),
+        ],
+        ...packagePaths,
+        additionalSkillPaths: [
+          ...(options.skillsDir ? [options.skillsDir] : []),
+          ...(packagePaths.additionalSkillPaths ?? []),
+        ],
+        ...piArgs.resources,
+      });
+      try {
+        await resourceLoader.reload();
+      } catch (error) {
+        if (!options.packages?.length) throw error;
+        throw new Error(
+          `packages: installation or loading failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (options.packages?.length) {
+        const errors = resourceLoader.getExtensions().errors;
+        if (errors.length) {
+          throw new Error(
+            `packages: extension loading failed: ${errors.map((error) => `${error.path}: ${error.error}`).join("; ")}`,
+          );
+        }
+        const skills = resourceLoader.getSkills();
+        const prompts = resourceLoader.getPrompts();
+        const themes = resourceLoader.getThemes();
+        const loadedPaths = new Set([
+          ...skills.skills.map((skill) => skill.filePath),
+          ...prompts.prompts.map((prompt) => prompt.filePath),
+          ...themes.themes.map((theme) => theme.sourceInfo?.path),
+        ]);
+        const failed = [
+          ...skills.diagnostics,
+          ...prompts.diagnostics,
+          ...themes.diagnostics,
+        ].filter(
+          (diagnostic) =>
+            diagnostic.type !== "collision" &&
+            diagnostic.path?.startsWith(`${agentDir}${sep}`) &&
+            !loadedPaths.has(diagnostic.path),
+        );
+        // pi warns and skips invalid resources. Fail on skipped package resources,
+        // but retain its normal warnings for resources that did load and collisions.
+        if (failed.length) {
+          throw new Error(
+            `packages: resource loading failed: ${failed.map((diagnostic) => `${diagnostic.path}: ${diagnostic.message}`).join("; ")}`,
+          );
+        }
+      }
+      const command = expandRequestedCommand(
+        options.userRequest,
+        resourceLoader,
       );
-    }
-  }
-  const command = expandRequestedCommand(options.userRequest, resourceLoader);
 
-  const sessionManager = SessionManager.inMemory(cwd);
-  const { session } = await createAgentSession({
-    cwd,
-    agentDir,
-    model: model.model,
-    // --thinking wins over a :<thinking> suffix on the model, as in pi's CLI.
-    thinkingLevel: piArgs.thinkingLevel ?? model.thinkingLevel,
-    tools: structuredOutput
-      ? structuredOutput.sessionTools(piArgs)
-      : piArgs.tools,
-    excludeTools: piArgs.excludeTools,
-    noTools: piArgs.noTools,
-    customTools,
-    modelRuntime,
-    resourceLoader,
-    settingsManager,
-    sessionManager,
-  });
-  const toolsProblem = structuredOutput?.toolsProblem(
-    session.getActiveToolNames(),
-  );
-  if (toolsProblem) {
-    await closeSession(session);
-    throw new Error(toolsProblem);
-  }
-
-  const records = recordEvents(
-    session,
-    sessionManager.getHeader(),
-    options.showFullOutput,
-  );
-  const { failure, stats, audit } = await runSession(
-    session,
-    command ? `${prompt}\n\n${command}` : prompt,
-    structuredOutput,
-    auditCollector,
-    hasCatalogPrices(model.model),
-  );
-  const totals: SessionStatsRecord = { type: "session_stats", ...stats };
-  records.push(totals);
-  core.info(
-    `pi used ${stats.tokens.total} tokens in ${stats.assistantMessages} responses, cost $${stats.cost.toFixed(4)}`,
-  );
-
-  const executionFile = await writeExecutionFile(records);
-  const sessionId = session.sessionId;
-  core.info(`Set session_id: ${sessionId}`);
-  // The in-memory session outlives its AgentSession: no raw copy is written.
-  const sessionExport = options.exportSession
-    ? await writeSessionExport(
+      const sessionManager = SessionManager.inMemory(cwd);
+      const { session } = await createAgentSession({
+        cwd,
+        agentDir,
+        model: model.model,
+        // --thinking wins over a :<thinking> suffix on the model, as in pi's CLI.
+        thinkingLevel: piArgs.thinkingLevel ?? model.thinkingLevel,
+        tools: structuredOutput
+          ? structuredOutput.sessionTools(piArgs)
+          : piArgs.tools,
+        excludeTools: piArgs.excludeTools,
+        noTools: piArgs.noTools,
+        customTools,
+        modelRuntime,
+        resourceLoader,
+        settingsManager,
         sessionManager,
-        join(process.env.RUNNER_TEMP || tmpdir(), SESSION_EXPORT_DIR),
-      )
-    : undefined;
+      });
+      const toolsProblem = structuredOutput?.toolsProblem(
+        session.getActiveToolNames(),
+      );
+      if (toolsProblem) {
+        await closeSession(session);
+        throw new Error(toolsProblem);
+      }
 
-  if (failure !== undefined) {
-    throw new RunnerFailure(
-      `pi execution failed: ${failure}`,
-      audit,
-      sessionExport,
-    );
-  }
-  return {
-    conclusion: "success",
-    executionFile,
-    sessionId,
-    structuredOutput: structuredOutput?.output(),
-    audit,
-    sessionExport,
-  };
+      const records = recordEvents(
+        session,
+        sessionManager.getHeader(),
+        options.showFullOutput,
+      );
+      const { failure, stats, audit } = await runSession(
+        session,
+        command ? `${prompt}\n\n${command}` : prompt,
+        structuredOutput,
+        auditCollector,
+        hasCatalogPrices(model.model),
+      );
+      const totals: SessionStatsRecord = { type: "session_stats", ...stats };
+      records.push(totals);
+      core.info(
+        `pi used ${stats.tokens.total} tokens in ${stats.assistantMessages} responses, cost $${stats.cost.toFixed(4)}`,
+      );
+
+      const executionFile = await writeExecutionFile(records);
+      const sessionId = session.sessionId;
+      core.info(`Set session_id: ${sessionId}`);
+      // The in-memory session outlives its AgentSession: no raw copy is written.
+      const sessionExport = options.exportSession
+        ? await writeSessionExport(
+            sessionManager,
+            join(process.env.RUNNER_TEMP || tmpdir(), SESSION_EXPORT_DIR),
+          )
+        : undefined;
+
+      if (failure !== undefined) {
+        throw new RunnerFailure(
+          `pi execution failed: ${failure}`,
+          audit,
+          sessionExport,
+        );
+      }
+      return {
+        conclusion: "success",
+        executionFile,
+        sessionId,
+        structuredOutput: structuredOutput?.output(),
+        audit,
+        sessionExport,
+      };
+    },
+  );
 }
 
 /**

@@ -84,6 +84,7 @@ export const ACTION_SECRET_ENV: readonly string[] = [
   "SSH_SIGNING_KEY",
   "API_KEY",
   "PI_ARGS",
+  "INPUT_SETTINGS",
   "ALL_INPUTS",
 ];
 

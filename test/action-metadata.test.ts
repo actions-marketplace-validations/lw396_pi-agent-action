@@ -112,6 +112,14 @@ describe("action metadata", () => {
     );
   });
 
+  test("passes native settings to the run step without a deprecation warning", () => {
+    expect(inputDefault("settings")).toBe("");
+    expect(inputBlock("settings")).not.toContain("deprecationMessage");
+    expect(metadata).toContain(
+      "        INPUT_SETTINGS: ${{ inputs.settings }}\n",
+    );
+  });
+
   test("defaults the triggers and branch prefix to pi branding", () => {
     expect(inputDefault("trigger_phrase")).toBe("@pi");
     expect(inputDefault("label_trigger")).toBe("pi");
@@ -136,7 +144,6 @@ describe("action metadata", () => {
   test("passes no Claude Code configuration to the run step", () => {
     for (const name of [
       "CLAUDE_ARGS",
-      "INPUT_SETTINGS",
       "INPUT_PLUGINS",
       "INPUT_PLUGIN_MARKETPLACES",
       "PATH_TO_CLAUDE_CODE_EXECUTABLE",
